@@ -336,6 +336,7 @@ const HL = 44, HW = 27, CH = 9, GW = 6.5, GH = 5.5, GD = 5, WALL_H = 7.5;
 const BALL_R = 1.35, G = 26, BALL_G = 34, BALL_MASS = 3.2, CEIL = 9;
 const BALL_VY_MAX = 14, BALL_VY_KICK = 17;   // kicks may launch higher than bumps and punches
 const BUMPER_LIFE = 10, BUMPER_R = 0.85, BUMPER_H = 1.7, BUMPER_KB = 17, BUMPER_DMG = 5, BUMPER_E = 1.25, BUMPER_BALL_MIN = 13, SUIT_TIME = 15;
+const CHARGE_HOLD = 2.0, LOB_DIP = 0.9;   // longest you can hold a charge; extra gravity on the way down for a power lob
 const KICK_FULL = 0.97, TOWER_BALL_DMG = 2.6, TOWER_BALL_MIN = 10;
 const PARRY_WINDOW = 0.22, REGEN_DELAY = 5, REGEN_RATE = 0.007, BUFF_TIME = 30;
 const SHIELD_DRAIN = 22, SHIELD_REGEN = 18, SHIELD_STUN = 3;
@@ -688,7 +689,7 @@ class Sim {
     else { p.stamRegenT -= dt; if (p.stamRegenT <= 0) p.stamina = Math.min(p.maxStam, p.stamina + 24 * dt); }
     p.sprinting = sprinting;
     if (p.shielding) speed *= 0.35;
-    if (p.charge) speed *= 0.55;
+    if (p.charge) speed *= 0.4;
     if (p.atk) speed *= p.grounded ? 0.3 : 0.85;
     if (p.slowT > 0) speed *= 0.5;
     const skillMove = (p.skill && p.skill.lockMove) || this.atkDashing(p);
@@ -702,7 +703,8 @@ class Sim {
     p.anim.walk += Math.hypot(p.vx, p.vz) * dt * 1.6;
 
     // facing
-    if (p.atk || p.skill || p.charge || p.shielding) p.yaw = lerpAng(p.yaw, inp.aimYaw, Math.min(1, 22 * dt));
+    if (p.charge && p.charge.yaw != null) p.yaw = lerpAng(p.yaw, p.charge.yaw, Math.min(1, 22 * dt));
+    else if (p.atk || p.skill || p.charge || p.shielding) p.yaw = lerpAng(p.yaw, inp.aimYaw, Math.min(1, 22 * dt));
     else if (ml > 0.1 && !(p.stunT > 0)) p.yaw = lerpAng(p.yaw, Math.atan2(mz, mx), Math.min(1, 12 * dt));
 
     // jump / double jump
@@ -720,11 +722,13 @@ class Sim {
     }
     if (p.charge) {
       p.charge.t += dt;
+      // players steer a charged punch / kick with movement (any direction); with no movement it follows the camera
+      if (!p.isBot && ml > 0.3) p.charge.yaw = Math.atan2(mz, mx);
       const held = inp[p.charge.type];
       if (busy || p.shielding) p.charge = null;
-      else if (!held || p.charge.t >= 0.85) {
+      else if (!held || p.charge.t >= CHARGE_HOLD) {
         const c = clamp((p.charge.t - 0.12) / 0.6, 0, 1);
-        this.startAttack(p, p.charge.type, c, inp.aimYaw);
+        this.startAttack(p, p.charge.type, c, p.charge.yaw != null ? p.charge.yaw : inp.aimYaw);
         p.charge = null;
       }
     }
@@ -739,7 +743,7 @@ class Sim {
 
   /* Charged attacks: the meter sets dash distance/acceleration and hit power.
      Punch: grounded = charged dash punch (costs stamina), airborne = lunge along the camera.
-     Kick: short step-in; tap = gentle chip, more charge = higher lofted chip, FULL charge = powerful rising line drive. */
+     Kick: short step-in; tap = gentle chip, more charge = higher lofted chip, FULL charge = power lob (big high arc that dips late). */
   startAttack(p, type, charge, aimYaw) {
     const A = ATTACKS[type];
     p.yaw = aimYaw;
@@ -815,9 +819,10 @@ class Sim {
           if (a.type === 'punch') {
             pow = 9 * (1 + 1.6 * c) * dashBonus; elev = a.aerial ? -0.45 : 0.1 + 0.05 * c;   // drive, or bounce shot from the air
           } else if (a.aerial) { pow = 10 * (1 + 1.2 * c); elev = 0.12; }                       // volley
-          else if (c >= KICK_FULL) { pow = 36; elev = 0.24; }                                       // full charge: powerful rising line drive (clears / elevated shots)
-          else { const h = 4.5 + 15 * c, v = 9.5 + 7.8 * c; pow = Math.hypot(h, v); elev = Math.atan2(v, h); } // gentle chip -> high lofted chip
+          else if (c >= KICK_FULL) { pow = Math.hypot(33, 17); elev = Math.atan2(17, 33); }       // full charge: power lob, big high arc that dips down late (clears / elevated shots)
+          else { const h = 4.5 + 11 * c, v = 9.5 + 5.5 * c; pow = Math.hypot(h, v); elev = Math.atan2(v, h); } // gentle chip -> high lofted chip
           this.hitBall(p, fx, fz, elev, pow * H.ballPow, 0.3, a.type === 'kick' && !a.aerial ? BALL_VY_KICK : BALL_VY_MAX);
+          if (a.type === 'kick' && !a.aerial && c >= KICK_FULL) b.dip = true;
           this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow, super: pow > 24 });
           if (a.dash && a.type === 'punch') { p.vx *= 0.35; p.vz *= 0.35; a.dash.dur = Math.min(a.dash.dur, a.t - A.startup); }
         }
@@ -828,6 +833,7 @@ class Sim {
 
   hitBall(p, fx, fz, elev, pow, keep, vyMax) {
     const b = this.ball, pre = [b.x, b.y, b.z, b.vx, b.vy, b.vz];
+    b.dip = false;
     if (p) { pow *= this.mods(p.team).atk > 1 ? 1.1 : 1; b.team = p.team; }
     const ce = Math.cos(elev), se = Math.sin(elev);
     b.vx = b.vx * keep + fx * ce * pow;
@@ -1289,9 +1295,10 @@ class Sim {
   integrateBall(h) {
     const b = this.ball;
     b.vy -= BALL_G * h;
+    if (b.dip && b.vy < 0) b.vy -= BALL_G * LOB_DIP * h;
     b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h;
     if (b.y < BALL_R) {
-      b.y = BALL_R;
+      b.y = BALL_R; b.dip = false;
       if (b.vy < 0) { const imp = -b.vy; b.vy = imp * 0.65; if (b.vy < 1.2) b.vy = 0; if (imp > 6) this.emit({ type: 'bounce', x: b.x, z: b.z, v: imp }); }
     }
     const grounded = b.y <= BALL_R + 0.02;
@@ -1356,6 +1363,7 @@ class Sim {
       const dx = b.x - p.x, dy = b.y - cy, dz = b.z - p.z;
       const d = Math.hypot(dx, dy, dz), m = BALL_R + p.r;
       if (d >= m || d < 1e-5) continue;
+      b.dip = false;
       const nx = dx / d, ny = dy / d, nz = dz / d, o = m - d;
       const mp = p.hero.weight * (p.shielding ? 4 : 1);
       const wb = mp / (mp + BALL_MASS * 0.6);
@@ -2783,6 +2791,63 @@ function syncPads(sim, t) {
   });
 }
 const projMeshes = new Map(), segMeshes = new Map(), bumperMeshes = new Map();
+/* Charge aim arrow (your own hero): punch = flat arrow at waist height whose tip marks where the dash ends;
+   kick = arrow from the feet that tilts up and grows with the charge. Direction follows your movement while charging. */
+const DASH_RANGE = {};
+function dashRange(c, aerial) {
+  const key = aerial ? 'air' : 'gnd';
+  if (!DASH_RANGE[key]) {
+    const tab = [];
+    for (let i = 0; i <= 10; i++) {
+      try {
+        const sm = new FB.Sim([{ team: 0, slot: 0, role: 'FWD', hero: 'blaze', name: 'x', isBot: true }], { halfLen: 300 });
+        sm.phase = 'play'; sm.towers = []; sm.ball.x = 40; sm.ball.z = 25;
+        const q = sm.players[0]; q.x = -20; q.z = 0; q.y = aerial ? 3 : 0; q.vx = q.vy = q.vz = 0; q.grounded = !aerial; q.invulnT = 0;
+        sm.startAttack(q, 'punch', i / 10, 0);
+        const inp = [FB.emptyInput()]; for (let k = 0; k < 50; k++) sm.step(1 / 60, inp);
+        tab.push(q.x + 20);
+      } catch (e) { tab.push(i * 0.8); }
+    }
+    DASH_RANGE[key] = tab;
+  }
+  const tab = DASH_RANGE[key], f = U.clamp(c, 0, 1) * 10, i = Math.min(9, Math.floor(f));
+  return tab[i] + (tab[i + 1] - tab[i]) * (f - i);
+}
+const aimArrow = (() => {
+  const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: 0xff5d8f, transparent: true, opacity: 0.85, depthTest: false });
+  const omat = new THREE.MeshBasicMaterial({ color: 0x1b1733, transparent: true, opacity: 0.6, depthTest: false });
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat); shaft.geometry.translate(0.5, 0, 0);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 4), mat); head.geometry.rotateZ(-Math.PI / 2); head.geometry.translate(0.5, 0, 0); head.rotation.x = Math.PI / 4;
+  const shaftO = new THREE.Mesh(shaft.geometry, omat), headO = new THREE.Mesh(head.geometry, omat); headO.rotation.x = Math.PI / 4;
+  g.add(shaftO, headO, shaft, head); g.visible = false; g.renderOrder = 10; [shaft, head, shaftO, headO].forEach((m, i) => { m.renderOrder = i < 2 ? 10 : 11; });
+  g.rotation.order = 'YZX';
+  scene.add(g);
+  return { g, mat, shaft, head, shaftO, headO };
+})();
+const _arrowCol = new THREE.Color();
+function updateAimArrow(sim, t) {
+  const A = aimArrow, me = sim && sim.players[APP.meId], m = me && APP.models[APP.meId];
+  if (!me || !m || !me.alive || !me.charge || APP.paused) { A.g.visible = false; return; }
+  const c = U.clamp((me.charge.t - 0.12) / 0.6, 0, 1), full = c >= 0.97, s = m.s, kick = me.charge.type === 'kick';
+  const yaw = me.charge.yaw != null ? me.charge.yaw : me.aimYaw;
+  let start, len, pitch, thick, y;
+  if (kick) {
+    start = 0.5 * s; len = 1.6 + 6.5 * c; pitch = (12 + 46 * c) * Math.PI / 180; thick = 0.14 + 0.16 * c; y = 0.12;
+    _arrowCol.set(full ? '#ffd23f' : FB.TEAM_COLORS[me.team]);
+  } else {
+    const aerial = !me.grounded;
+    start = me.r + 0.15; len = Math.max(0.5, dashRange(c, aerial) + me.r * 0.6 - start); pitch = 0; thick = 0.14 + 0.2 * c; y = 0.95 * s;
+    _arrowCol.set(full ? '#ffd23f' : '#ff5d8f');
+  }
+  if (full) _arrowCol.lerp(new THREE.Color('#ffffff'), 0.35 + 0.35 * Math.sin(t * 22));
+  A.mat.color.copy(_arrowCol);
+  const headL = Math.min(len * 0.45, 0.45 + 0.6 * c), headW = thick * 2.6;
+  A.shaft.position.x = A.shaftO.position.x = start; A.shaft.scale.set(Math.max(0.01, len - headL), thick, thick); A.shaftO.scale.set(Math.max(0.01, len - headL) + 0.08, thick + 0.08, thick + 0.08); A.shaftO.position.x = start - 0.04;
+  A.head.position.x = A.headO.position.x = start + len - headL; A.head.scale.set(headL, headW, headW); A.headO.scale.set(headL + 0.1, headW + 0.1, headW + 0.1); A.headO.position.x = start + len - headL - 0.03;
+  A.g.position.set(m.g.position.x, m.g.position.y + y, m.g.position.z);
+  A.g.rotation.set(0, -yaw, pitch);
+  A.g.visible = true;
+}
 function makeBumperMesh(team) {
   const g = new THREE.Group(), tc = TEAMC[team];
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.05, 0.3, 24), rimify(toon('#2b2747'))); base.position.y = 0.15; outline(base, 1.06); g.add(base);
@@ -3185,13 +3250,13 @@ function renderControlHints() {
   const pad = PAD.using;
   const html = pad
     ? `<kbd>${BIND.opt.swapSticks ? 'R' : 'L'} stick</kbd> move &middot; <kbd>${BIND.opt.swapSticks ? 'L' : 'R'} stick</kbd> camera &middot; ${k('jump')} jump x2<br>${k('punch')} punch &middot; ${k('kick')} kick &middot; hold = charge &middot; ${k('sprint')} sprint<br>Punch in the air = bounce shot &middot; kick in the air = volley<br>${k('s1')} ${k('s2')} skills &middot; ${k('shield')} shield &middot; ${k('ballcam')} ball cam<br>${k('pause')} pause &middot; ${k('help')} hide help &middot; hold ${k('scores')} stats<br>Shield right as a hit lands = <b>parry</b> (3s stun)`
-    : `${k('moveF')}${k('moveL')}${k('moveB')}${k('moveR')} move &middot; ${k('jump')} jump x2 &middot; ${k('sprint')} sprint<br>${k('punch')} punch &middot; ${k('kick')} kick &middot; hold = charge<br>Punch in the air = bounce shot &middot; kick in the air = volley<br>${k('s1')} ${k('s2')} skills &middot; ${k('shield')} shield &middot; ${k('ballcam')} ball cam<br>${k('camL')}${k('camR')} turn camera &middot; ${k('mute')} mute &middot; ${k('help')} hide help &middot; hold ${k('scores')} stats<br>Charged punch = dash &middot; tap kick = chip, charge = high chip, <b>full charge = power drive</b><br>Shield right as a hit lands = <b>parry</b> (3s stun)<br>Shield an incoming ball to deflect it &middot; shield breaks = 3s stun`;
+    : `${k('moveF')}${k('moveL')}${k('moveB')}${k('moveR')} move &middot; ${k('jump')} jump x2 &middot; ${k('sprint')} sprint<br>${k('punch')} punch &middot; ${k('kick')} kick &middot; hold = charge<br>Punch in the air = bounce shot &middot; kick in the air = volley<br>${k('s1')} ${k('s2')} skills &middot; ${k('shield')} shield &middot; ${k('ballcam')} ball cam<br>${k('camL')}${k('camR')} turn camera &middot; ${k('mute')} mute &middot; ${k('help')} hide help &middot; hold ${k('scores')} stats<br>Charged punch = dash &middot; tap kick = chip, charge = high chip, <b>full charge = power lob</b><br>While charging, steer the punch or kick with movement (arrow)<br>Shield right as a hit lands = <b>parry</b> (3s stun)<br>Shield an incoming ball to deflect it &middot; shield breaks = 3s stun`;
   $('helpBody').innerHTML = html;
   const kb = a => `<kbd>${(BIND.kb[a] || []).map(keyLabel).join(' / ') || '—'}</kbd>`;
   const pb = a => `<kbd>${(BIND.pad[a] || []).map(padLabel).join(' / ') || '—'}</kbd>`;
   $('lobbyControls').innerHTML = `${kb('moveF')}${kb('moveL')}${kb('moveB')}${kb('moveR')} move &nbsp; <kbd>Mouse</kbd> camera &nbsp; ${kb('jump')} jump &nbsp; ${kb('sprint')} sprint &nbsp; ${kb('punch')} punch &nbsp; ${kb('kick')} kick &nbsp; ${kb('s1')} ${kb('s2')} skills &nbsp; ${kb('shield')} shield &nbsp; ${kb('ballcam')} ball cam &nbsp; <kbd>Esc</kbd> pause &nbsp; hold ${kb('scores')} stats<br>
     Controller: <kbd>Sticks</kbd> move/camera &nbsp; ${pb('jump')} jump &nbsp; ${pb('punch')} punch &nbsp; ${pb('kick')} kick &nbsp; ${pb('s1')} ${pb('s2')} skills &nbsp; ${pb('shield')} shield &nbsp; ${pb('sprint')} sprint &nbsp; ${pb('ballcam')} ball cam &nbsp; ${pb('pause')} pause &nbsp; hold ${pb('scores')} stats &nbsp; <kbd>D-pad</kbd>+<kbd>${padLabel(0)}</kbd> menus<br>
-    Hold punch to charge a dash punch &middot; punch in the air lunges where the camera faces &middot; tap kick to chip, charge it for a higher chip, max the meter for a rising power drive to clear or shoot &middot; raise shield just as a hit lands to <b>parry</b> and stun for 3s &middot; a colored ball belongs to the team that last struck it and hurts the other team when fast; shield to deflect it &middot; holding the shield too long breaks it (3s stun) &middot; destroy enemy towers for a team bonus until half time &middot; grab health packs (one lands in each goal 2 minutes into a round) and stamina pads`;
+    Hold punch to charge a dash punch (the arrow tip shows where you'll land; steer it any way with movement) &middot; punch in the air lunges where the camera faces &middot; tap kick to chip, charge it for a higher chip, max the meter for a power lob that arcs high and dips late, for clears and elevated shots (steer kicks with movement too) &middot; raise shield just as a hit lands to <b>parry</b> and stun for 3s &middot; a colored ball belongs to the team that last struck it and hurts the other team when fast; shield to deflect it &middot; holding the shield too long breaks it (3s stun) &middot; destroy enemy towers for a team bonus until half time &middot; grab health packs (one lands in each goal 2 minutes into a round) and stamina pads`;
   if (APP.state === 'match' && APP.sim) buildAbilityLabels();
 }
 
@@ -3399,6 +3464,7 @@ function startMatch(roster, opts) {
   if (me && !PAD.using) tryLock();
 }
 function clearMatch() {
+  aimArrow.g.visible = false;
   APP.models.forEach(m => scene.remove(m.g)); APP.models = [];
   for (const [, m] of projMeshes) scene.remove(m); projMeshes.clear();
   for (const [, m] of segMeshes) scene.remove(m); segMeshes.clear();
@@ -3850,7 +3916,7 @@ function netSnapshot(sim) {
       r(p.cd1), r(p.cd2), p.shielding ? 1 : 0, r(p.stunT), r(p.dizzyT), r(p.invulnT), p.grounded ? 1 : 0, p.sprinting ? 1 : 0, r(Math.min(9, sim.time - p.shieldUpT)), r(p.shieldBrokenT),
       r(p.maxStam), r(p.maxShield),
       p.atk ? [p.atk.type, r(p.atk.t), p.atk.combo | 0, p.atk.dash ? r(p.atk.dash.dur) : 0, r(p.atk.activeEnd || 0), r(p.atk.end || 0), r(p.atk.charge || 0), p.atk.aerial ? 1 : 0, p.atk.dash ? r(p.atk.dash.top) : 0, p.atk.dash && p.atk.dash.air ? 1 : 0, r(p.atk.fx), r(p.atk.fz), p.atk.dashDone ? 1 : 0] : 0,
-      p.charge ? [p.charge.type, r(p.charge.t)] : 0, p.skill ? [p.skill.id, r(p.skill.t || 0), r(p.skill.fx || 0), r(p.skill.fz || 0), r(p.skill.dur || 0), p.skill.lockMove ? 1 : 0] : 0,
+      p.charge ? [p.charge.type, r(p.charge.t), p.charge.yaw != null ? r(p.charge.yaw) : null] : 0, p.skill ? [p.skill.id, r(p.skill.t || 0), r(p.skill.fx || 0), r(p.skill.fz || 0), r(p.skill.dur || 0), p.skill.lockMove ? 1 : 0] : 0,
       [p.stats.goals, p.stats.assists, p.stats.kos, p.stats.deaths, p.stats.saves, p.stats.parries, p.stats.towers, Math.round(p.stats.dmg)],
       [p.jumps | 0, r(p.comboT || 0), p.combo | 0, r(p.lockT || 0), r(p.slowT || 0), p.intangible ? 1 : 0, r(p.stamRegenT || 0), r(p.suitT || 0)]]),
     pr: sim.projs.map(q => [q.id, q.type, q.team, r(q.x), r(q.y), r(q.z), r(q.vx), r(q.vy), r(q.vz)]),
@@ -3877,7 +3943,7 @@ function netApply(sim, s) {
     if (!wasAlive && p.alive) { p.px = p.x; p.py = p.y; p.pz = p.z; }
     const at = a[24];
     p.atk = at ? { type: at[0], t: at[1], combo: at[2], dash: at[3] ? { dur: at[3], top: at[8] || 0, air: !!at[9] } : null, activeEnd: at[4], end: at[5], charge: at[6], aerial: !!at[7], fx: at[10] != null ? at[10] : Math.cos(p.yaw), fz: at[11] != null ? at[11] : Math.sin(p.yaw), dashDone: !!at[12], hit: new Set(), hitT: new Set(), ballDone: true } : null;
-    p.charge = a[25] ? { type: a[25][0], t: a[25][1] } : null;
+    p.charge = a[25] ? { type: a[25][0], t: a[25][1], yaw: a[25][2] != null ? a[25][2] : null } : null;
     p.skill = a[26] ? { id: a[26][0], t: a[26][1], fx: a[26][2], fz: a[26][3], dur: a[26][4], lockMove: !!a[26][5], hit: new Set(), hitT: new Set(), ball: true, fired: true, hop: a[26][0] === 'uppercut' && a[26][1] >= 0.24, nextHit: 99, n: 5 } : null;
     const st = a[27]; Object.assign(p.stats, { goals: st[0], assists: st[1], kos: st[2], deaths: st[3], saves: st[4], parries: st[5], towers: st[6], dmg: st[7] });
     if (a[28]) { p.jumps = a[28][0]; p.comboT = a[28][1]; p.combo = a[28][2]; p.lockT = a[28][3]; p.slowT = a[28][4]; p.intangible = !!a[28][5]; p.stamRegenT = a[28][6]; p.suitT = a[28][7] || 0; }
@@ -4237,7 +4303,7 @@ function updateHud(dt) {
       const c = U.clamp((me.charge.t - 0.12) / 0.6, 0, 1), cap = 1;
       ch.firstChild.style.width = (Math.min(c, cap) * 100) + '%';
       ch.lastChild.style.left = (cap * 100) + '%'; ch.lastChild.style.display = cap < 1 ? 'block' : 'none';
-      ch.dataset.kind = me.charge.type === 'kick' ? (c < 0.35 ? 'Chip' : c < 0.97 ? 'High chip' : 'POWER DRIVE') : (!me.grounded ? 'Lunge' : c < 0.05 ? 'Jab' : c < 0.99 ? 'Dash punch' : 'MAX dash');
+      ch.dataset.kind = me.charge.type === 'kick' ? (c < 0.35 ? 'Chip' : c < 0.97 ? 'High chip' : 'POWER LOB') : (!me.grounded ? 'Lunge' : c < 0.05 ? 'Jab' : c < 0.99 ? 'Dash punch' : 'MAX dash');
     } else ch.classList.add('hidden');
     $('meBuffs').innerHTML = buffChips(me.team);
     $('ko').classList.toggle('hidden', me.alive || sim.phase !== 'play');
@@ -4584,6 +4650,7 @@ function frame(now) {
     if (bs > 12 && !APP.paused && bp.team >= 0) { const tc = FB.TEAM_COLORS[bp.team]; burst(bx, by, bz, 1 + Math.round(bp.k * 3), [tc, '#ffffff'], 1.5, 0.3 + 0.35 * bp.k, 0.3 + 0.2 * bp.k, 0); }
     gravFx.visible = b.grav != null; if (gravFx.visible) { gravFx.position.set(bx, by, bz); gravFx.rotation.x = t * 3; gravFx.rotation.y = t * 4; if (!APP.paused) for (let i = 0; i < 3; i++) { const a2 = Math.random() * 6.28, r = 3 + Math.random() * 1.5; PS.glow.add({ x: bx + Math.cos(a2) * r, y: by + (Math.random() - 0.5) * 2, z: bz + Math.sin(a2) * r, vx: -Math.cos(a2) * r * 3.5 - Math.sin(a2) * 6, vy: 0, vz: -Math.sin(a2) * r * 3.5 + Math.cos(a2) * 6, life: 0.28, max: 0.28, size: 0.4, c: rgbOf('#c9b5ff'), g: 0, rot: 0, vr: 0 }); } }
     syncProjectiles(sim);
+    updateAimArrow(sim, t);
     syncBumpers(sim, APP.paused ? 0 : dt);
     syncItems(sim, t);
     syncPads(sim, t);
