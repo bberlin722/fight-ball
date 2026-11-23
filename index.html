@@ -337,6 +337,7 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const BALL_R = 1.35, G = 26, BALL_G = 34, BALL_MASS = 3.2, CEIL = 9;
 const BALL_VY_MAX = 14, BALL_VY_KICK = 17;   // kicks may launch higher than bumps and punches
 const BUMPER_LIFE = 10, BUMPER_R = 0.85, BUMPER_H = 1.7, BUMPER_KB = 17, BUMPER_DMG = 5, BUMPER_E = 1.25, BUMPER_BALL_MIN = 13, SUIT_TIME = 15;
+const CHARGE_FULL_T = 0.72, CHARGE_MIN = 0.25;   // the meter fills evenly from 25% (instant tap) to 100% at 0.72 s
 const CHARGE_HOLD = 2.0, LOB_DIP = 0.9, RAMP_LAUNCH_MIN = 12, RAMP_LIFT = 0.55;   // longest you can hold a charge; extra gravity on the way down for a power lob
 const KICK_FULL = 0.97, TOWER_BALL_DMG = 2.6, TOWER_BALL_MIN = 10;
 const PARRY_WINDOW = 0.22, REGEN_DELAY = 5, REGEN_RATE = 0.007, BUFF_TIME = 30;
@@ -350,7 +351,23 @@ const PAD_SMALL = 0.3, PAD_SMALL_T = 10, PAD_BIG_T = 30;
 const ITEM_TYPES = { hp: { name: 'Health pack' }, atk: { name: 'Attack boost' }, def: { name: 'Defense boost' } };
 FB.ITEM_TYPES = ITEM_TYPES;
 /* Ground kick launch (before ballPow): tap = chip, charge = higher chip, full = power lob (big arc, dips late). */
-FB.kickLaunch = c => c >= KICK_FULL ? { h: 33, v: 17, dip: true } : { h: 4.5 + 11 * c, v: 9.5 + 5.5 * c, dip: false };
+/* Charge power read straight off the meter: 0.25 on an instant tap, rising evenly to 1.0 at full. Everything an attack does scales with it. */
+/* Measured dash duration -> distance (top speed 32 on the ground, 25 in the air), used to make dash distance exactly proportional to power. */
+const DASH_GND = [[0.02, 0.81], [0.05, 1.86], [0.08, 2.70], [0.11, 3.54], [0.14, 4.37], [0.17, 4.84], [0.20, 5.52], [0.23, 6.36], [0.26, 7.19], [0.29, 8.03], [0.32, 8.87]];
+const DASH_AIR = [[0.02, 1.15], [0.05, 2.35], [0.08, 3.00], [0.11, 3.66], [0.14, 4.31], [0.17, 4.66], [0.20, 5.19], [0.23, 5.84], [0.26, 6.47], [0.29, 7.11], [0.32, 7.75]];
+function dashDurFor(tab, dist) {
+  if (dist <= tab[0][1]) return tab[0][0];
+  for (let i = 1; i < tab.length; i++) if (dist <= tab[i][1]) { const [d0, x0] = tab[i - 1], [d1, x1] = tab[i]; return d0 + (d1 - d0) * (dist - x0) / (x1 - x0); }
+  return tab[tab.length - 1][0];
+}
+FB.chargePower = t => CHARGE_MIN + (1 - CHARGE_MIN) * clamp(t / CHARGE_FULL_T, 0, 1);
+/* Ground kick launch (before ballPow) at power P: speed scales with P; the angle goes from a steep chip (60°) to the lob angle; a full meter is the power lob (dips late). */
+const KICK_LOB = { h: 33, v: 17 }, KICK_SPEED = Math.hypot(33, 17), KICK_LOB_ANG = Math.atan2(17, 33);
+FB.kickLaunch = P => {
+  // continuous in P: a full meter is exactly the power lob; the late dip fades in from 50% so a fuller bar always carries further
+  const f = clamp((P - CHARGE_MIN) / (1 - CHARGE_MIN), 0, 1), ang = Math.PI / 3 + (KICK_LOB_ANG - Math.PI / 3) * f, sp = KICK_SPEED * P;
+  return { h: sp * Math.cos(ang), v: sp * Math.sin(ang), dip: LOB_DIP * clamp((P - 0.5) / 0.5, 0, 1) };
+};
 /* Predicted flight of a ground kick from launch height y0 (for the aim arc): returns points [x along aim, y]. */
 FB.kickPath = (c, ballPow, y0) => {
   const L = FB.kickLaunch(c);
@@ -360,7 +377,7 @@ FB.kickPath = (c, ballPow, y0) => {
   const top = WALL_H - 0.2 - BALL_R, pts = [[0, y0]], dt = 1 / 60;
   let x = 0, y = y0;
   for (let i = 0; i < 240; i++) {
-    v -= BALL_G * dt; if (L.dip && v < 0) v -= BALL_G * LOB_DIP * dt;
+    v -= BALL_G * dt; if (L.dip && v < 0) v -= BALL_G * L.dip * dt;
     h -= 0.08 * h * dt;
     x += h * dt; y += v * dt;
     if (y > top) { y = top; v = -Math.abs(v) * 0.6; }
@@ -586,7 +603,7 @@ class Sim {
   resetRound() {
     for (const p of this.players) { this.placePlayer(p, true); p.cd1 = 0; p.cd2 = 0; p.respawnT = 0; }
     const b = this.ball;
-    b.x = b.px = 0; b.y = b.py = BALL_R + 3; b.z = b.pz = 0; b.safeX = 0; b.safeZ = 0; b.vx = b.vy = b.vz = 0; b.lastTouch = -1; b.grav = null; b.team = -1; b.ramp = null; b.dip = false;
+    b.x = b.px = 0; b.y = b.py = BALL_R + 3; b.z = b.pz = 0; b.safeX = 0; b.safeZ = 0; b.vx = b.vy = b.vz = 0; b.lastTouch = -1; b.grav = null; b.team = -1; b.ramp = null; b.dip = 0;
     this.projs.length = 0; this.dynSegs.length = 0; this.effects.length = 0; this.bumpers.length = 0;
     for (const p of this.players) p.suitT = 0;
     if (this.items) { this.items.length = 0; this.itemT = Math.max(this.itemT, 15); }
@@ -750,8 +767,8 @@ class Sim {
       const held = inp[p.charge.type];
       if (busy || p.shielding) p.charge = null;
       else if (!held || p.charge.t >= CHARGE_HOLD) {
-        const c = clamp((p.charge.t - 0.12) / 0.6, 0, 1);
-        this.startAttack(p, p.charge.type, c, p.charge.yaw != null ? p.charge.yaw : inp.aimYaw);
+        const P = FB.chargePower(p.charge.t);
+        this.startAttack(p, p.charge.type, P, p.charge.yaw != null ? p.charge.yaw : inp.aimYaw);
         p.charge = null;
       }
     }
@@ -776,9 +793,11 @@ class Sim {
       combo = p.comboT > 0 ? Math.min(p.combo + 1, 2) : 0; p.combo = combo; p.comboT = 0.55;
     }
     let dash = null;
-    if (type === 'punch' && aerial) dash = { dur: 0.16 + 0.12 * charge, top: 13 + 12 * charge, air: true };
-    else if (type === 'punch' && charge > 0.05) dash = { dur: 0.1 + 0.2 * charge, top: 12 + 20 * charge };
-    else if (type === 'kick' && !aerial && charge > 0.05) dash = { dur: 0.08 + 0.1 * charge, top: 5 + 9 * charge };
+    // charge = power P (0.25..1); dash distance is proportional to P (full = the old max dash)
+    // durations calibrated so the distance travelled is proportional to power: ground 7.95 m x P, air 6.8 m x P
+    if (type === 'punch' && aerial) dash = { dur: dashDurFor(DASH_AIR, 6.8 * charge), top: 25, air: true };
+    else if (type === 'punch') dash = { dur: dashDurFor(DASH_GND, 7.95 * charge), top: 32 };
+    else if (type === 'kick' && !aerial) dash = { dur: 0.18 * charge, top: 14 };
     const dashDur = dash ? dash.dur : 0;
     const activeEnd = A.startup + Math.max(A.active, dashDur + 0.05);
     p.atk = { type, t: 0, charge, hit: new Set(), ballDone: false, aerial, combo, dash, fx: Math.cos(aimYaw), fz: Math.sin(aimYaw),
@@ -807,7 +826,7 @@ class Sim {
     if (a.t >= A.startup && a.t <= a.activeEnd) {
       const reach = (A.reach + H.reach) * (0.9 + H.size * 0.1) + c * 0.3;
       const cy = p.y + p.height * 0.5;
-      const dashBonus = a.dash ? 1 + 0.25 * c : 1;
+      const dashBonus = a.dash ? 1.25 : 1;   // c = power (0.25..1); values at c = 1 match the old full charge
       for (const q of this.players) {
         if (q === p || !q.alive || q.team === p.team || a.hit.has(q.id)) continue;
         const dx = q.x - p.x, dz = q.z - p.z, dist = Math.hypot(dx, dz);
@@ -815,8 +834,8 @@ class Sim {
         if (dist - q.r > reach || Math.abs(dy) > 1.7) continue;
         if (dist > 0.01 && (dx * fx + dz * fz) / dist < A.arc) continue;
         a.hit.add(q.id);
-        let dmg = (a.type === 'punch' ? H.punch * (1 + 1.0 * c) : H.kick * (1 + 0.7 * c)) * dashBonus;
-        let kb = A.kb * (1 + 1.1 * c) * dashBonus, lift = A.lift;
+        let dmg = (a.type === 'punch' ? H.punch * 2 : H.kick * 1.7) * c * dashBonus;
+        let kb = A.kb * 2.1 * c * dashBonus, lift = A.lift;
         if (a.type === 'punch' && a.combo === 2) { kb *= 1.6; dmg *= 1.3; }
         if (a.aerial && a.type === 'kick') lift = -0.25;
         if (a.aerial && a.type === 'punch') lift = 0.15;
@@ -829,7 +848,7 @@ class Sim {
         const dx = tw.x - p.x, dz = tw.z - p.z, dist = Math.hypot(dx, dz);
         if (dist - tw.r > reach || (dist > 0.01 && (dx * fx + dz * fz) / dist < A.arc - 0.2)) continue;
         a.hitT.add(tw.id);
-        this.damageTower(tw, (a.type === 'punch' ? H.punch * (1 + 1.0 * c) : H.kick * (1 + 0.7 * c)) * dashBonus, p);
+        this.damageTower(tw, (a.type === 'punch' ? H.punch * 2 : H.kick * 1.7) * c * dashBonus, p);
         if (a.dash) { p.vx *= 0.2; p.vz *= 0.2; a.dash.dur = Math.min(a.dash.dur, a.t - A.startup); }
       }
       if (!a.ballDone) {
@@ -840,11 +859,11 @@ class Sim {
           a.ballDone = true;
           let pow, elev;
           if (a.type === 'punch') {
-            pow = 9 * (1 + 1.6 * c) * dashBonus; elev = a.aerial ? -0.45 : 0.1 + 0.05 * c;   // drive, or bounce shot from the air
-          } else if (a.aerial) { pow = 10 * (1 + 1.2 * c); elev = 0.12; }                       // volley
+            pow = 23.4 * c * dashBonus; elev = a.aerial ? -0.45 : 0.15;   // drive, or bounce shot from the air
+          } else if (a.aerial) { pow = 22 * c; elev = 0.12; }                       // volley
           else { const L = FB.kickLaunch(c); pow = Math.hypot(L.h, L.v); elev = Math.atan2(L.v, L.h); }  // chip -> high chip; full charge = power lob that dips late
           this.hitBall(p, fx, fz, elev, pow * H.ballPow, 0.3, a.type === 'kick' && !a.aerial ? BALL_VY_KICK : BALL_VY_MAX);
-          if (a.type === 'kick' && !a.aerial && c >= KICK_FULL) b.dip = true;
+          if (a.type === 'kick' && !a.aerial) b.dip = FB.kickLaunch(c).dip;
           this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow, super: pow > 24 });
           if (a.dash && a.type === 'punch') { p.vx *= 0.35; p.vz *= 0.35; a.dash.dur = Math.min(a.dash.dur, a.t - A.startup); }
         }
@@ -855,7 +874,7 @@ class Sim {
 
   hitBall(p, fx, fz, elev, pow, keep, vyMax) {
     const b = this.ball, pre = [b.x, b.y, b.z, b.vx, b.vy, b.vz];
-    b.dip = false;
+    b.dip = 0;
     if (p) { pow *= this.mods(p.team).atk > 1 ? 1.1 : 1; b.team = p.team; }
     const ce = Math.cos(elev), se = Math.sin(elev);
     b.vx = b.vx * keep + fx * ce * pow;
@@ -1363,10 +1382,10 @@ class Sim {
   integrateBall(h) {
     const b = this.ball;
     b.vy -= BALL_G * h;
-    if (b.dip && b.vy < 0) b.vy -= BALL_G * LOB_DIP * h;
+    if (b.dip && b.vy < 0) b.vy -= BALL_G * b.dip * h;
     b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h;
     if (b.y < BALL_R) {
-      b.y = BALL_R; b.dip = false;
+      b.y = BALL_R; b.dip = 0;
       if (b.vy < 0) { const imp = -b.vy; b.vy = imp * 0.65; if (b.vy < 1.2) b.vy = 0; if (imp > 6) this.emit({ type: 'bounce', x: b.x, z: b.z, v: imp }); }
     }
     const grounded = b.y <= BALL_R + 0.02;
@@ -1431,7 +1450,7 @@ class Sim {
       const dx = b.x - p.x, dy = b.y - cy, dz = b.z - p.z;
       const d = Math.hypot(dx, dy, dz), m = BALL_R + p.r;
       if (d >= m || d < 1e-5) continue;
-      b.dip = false;
+      b.dip = 0;
       const nx = dx / d, ny = dy / d, nz = dz / d, o = m - d;
       const mp = p.hero.weight * (p.shielding ? 4 : 1);
       const wb = mp / (mp + BALL_MASS * 0.6);
@@ -2891,14 +2910,14 @@ function dashRange(c, aerial) {
         const sm = new FB.Sim([{ team: 0, slot: 0, role: 'FWD', hero: 'blaze', name: 'x', isBot: true }], { halfLen: 300 });
         sm.phase = 'play'; sm.towers = []; sm.ball.x = 40; sm.ball.z = 25;
         const q = sm.players[0]; q.x = -20; q.z = 0; q.y = aerial ? 3 : 0; q.vx = q.vy = q.vz = 0; q.grounded = !aerial; q.invulnT = 0;
-        sm.startAttack(q, 'punch', i / 10, 0);
+        sm.startAttack(q, 'punch', 0.25 + 0.075 * i, 0);
         const inp = [FB.emptyInput()]; for (let k = 0; k < 50; k++) sm.step(1 / 60, inp);
         tab.push(q.x + 20);
       } catch (e) { tab.push(i * 0.8); }
     }
     DASH_RANGE[key] = tab;
   }
-  const tab = DASH_RANGE[key], f = U.clamp(c, 0, 1) * 10, i = Math.min(9, Math.floor(f));
+  const tab = DASH_RANGE[key], f = U.clamp((c - 0.25) / 0.75, 0, 1) * 10, i = Math.min(9, Math.floor(f));
   return tab[i] + (tab[i + 1] - tab[i]) * (f - i);
 }
 const aimArrow = (() => {
@@ -2927,12 +2946,12 @@ const kickArc = (() => {
   return { g, mat, tube, tubeO, head, headO, ring, key: '' };
 })();
 const _up = new THREE.Vector3(0, 1, 0), _tan = new THREE.Vector3();
-function updateKickArc(me, m, c, yaw, col, t) {
-  const K = kickArc, s = m.s, fx = Math.cos(yaw), fz = Math.sin(yaw);
+function updateKickArc(me, m, P, yaw, col, t) {
+  const K = kickArc, s = m.s, fx = Math.cos(yaw), fz = Math.sin(yaw), c = (P - 0.25) / 0.75;
   const ox = m.g.position.x + fx * 0.5 * s, oy = m.g.position.y + 0.25, oz = m.g.position.z + fz * 0.5 * s;
-  const path = FB.kickPath(c, me.hero.ballPow, 0.25);
+  const path = FB.kickPath(P, me.hero.ballPow, 0.25);
   // ease the arc in while charging: it grows from the feet to the full flight as the meter fills
-  const grow = 0.35 + 0.65 * Math.min(1, c / 0.6 + 0.15);
+  const grow = 1;   // the arc always shows the exact shot you'd get if you let go now
   let n = Math.max(3, Math.round(path.length * grow)), hitWall = false;
   // stop the arc where it would meet the arena wall
   for (let i = 1; i < n; i++) { const X = ox + fx * path[i][0], Z = oz + fz * path[i][0]; if (Math.abs(X) > C.HL - 0.6 || Math.abs(Z) > C.HW - 0.6) { n = Math.max(2, i); hitWall = true; break; } }
@@ -2961,13 +2980,13 @@ function updateKickArc(me, m, c, yaw, col, t) {
 function updateAimArrow(sim, t) {
   const A = aimArrow, me = sim && sim.players[APP.meId], m = me && APP.models[APP.meId];
   if (!me || !m || !me.alive || !me.charge || APP.paused) { A.g.visible = false; kickArc.g.visible = false; return; }
-  const c = U.clamp((me.charge.t - 0.12) / 0.6, 0, 1), full = c >= 0.97, s = m.s, kick = me.charge.type === 'kick';
+  const P = FB.chargePower(me.charge.t), c = (P - 0.25) / 0.75, full = P >= 0.97, s = m.s, kick = me.charge.type === 'kick';
   const yaw = me.charge.yaw != null ? me.charge.yaw : me.aimYaw;
   let start, len, pitch, thick, y;
   if (kick && me.grounded) {
     _arrowCol.set(full ? '#ffc21a' : FB.TEAM_COLORS[me.team]);
     if (full) _arrowCol.lerp(new THREE.Color('#ffffff'), 0.15 + 0.2 * Math.sin(t * 22));
-    A.g.visible = false; updateKickArc(me, m, c, yaw, _arrowCol, t); return;
+    A.g.visible = false; updateKickArc(me, m, P, yaw, _arrowCol, t); return;
   }
   kickArc.g.visible = false;
   if (kick) {
@@ -2975,7 +2994,7 @@ function updateAimArrow(sim, t) {
     _arrowCol.set(full ? '#ffd23f' : FB.TEAM_COLORS[me.team]);
   } else {
     const aerial = !me.grounded;
-    start = me.r + 0.15; len = Math.max(0.5, dashRange(c, aerial) + me.r * 0.6 - start); pitch = 0; thick = 0.14 + 0.2 * c; y = 0.95 * s;
+    start = me.r + 0.15; len = Math.max(0.5, dashRange(P, aerial) + me.r * 0.6 - start); pitch = 0; thick = 0.14 + 0.2 * c; y = 0.95 * s;
     _arrowCol.set(full ? '#ffd23f' : '#ff5d8f');
   }
   if (full) _arrowCol.lerp(new THREE.Color('#ffffff'), 0.35 + 0.35 * Math.sin(t * 22));
@@ -3389,7 +3408,7 @@ function renderControlHints() {
   const pad = PAD.using;
   const html = pad
     ? `<kbd>${BIND.opt.swapSticks ? 'R' : 'L'} stick</kbd> move &middot; <kbd>${BIND.opt.swapSticks ? 'L' : 'R'} stick</kbd> camera &middot; ${k('jump')} jump x2<br>${k('punch')} punch &middot; ${k('kick')} kick &middot; hold = charge &middot; ${k('sprint')} sprint<br>Punch in the air = bounce shot &middot; kick in the air = volley<br>${k('s1')} ${k('s2')} skills &middot; ${k('shield')} shield &middot; ${k('ballcam')} ball cam<br>${k('pause')} pause &middot; ${k('help')} hide help &middot; hold ${k('scores')} stats<br>Shield right as a hit lands = <b>parry</b> (3s stun)`
-    : `${k('moveF')}${k('moveL')}${k('moveB')}${k('moveR')} move &middot; ${k('jump')} jump x2 &middot; ${k('sprint')} sprint<br>${k('punch')} punch &middot; ${k('kick')} kick &middot; hold = charge<br>Punch in the air = bounce shot &middot; kick in the air = volley<br>${k('s1')} ${k('s2')} skills &middot; ${k('shield')} shield &middot; ${k('ballcam')} ball cam<br>${k('camL')}${k('camR')} turn camera &middot; ${k('mute')} mute &middot; ${k('help')} hide help &middot; hold ${k('scores')} stats<br>Charged punch = dash &middot; tap kick = chip, charge = high chip, <b>full charge = power lob</b><br>While charging, steer the punch or kick with movement (arrow)<br>Shield right as a hit lands = <b>parry</b> (3s stun)<br>Shield an incoming ball to deflect it &middot; shield breaks = 3s stun`;
+    : `${k('moveF')}${k('moveL')}${k('moveB')}${k('moveR')} move &middot; ${k('jump')} jump x2 &middot; ${k('sprint')} sprint<br>${k('punch')} punch &middot; ${k('kick')} kick &middot; hold = charge<br>Punch in the air = bounce shot &middot; kick in the air = volley<br>${k('s1')} ${k('s2')} skills &middot; ${k('shield')} shield &middot; ${k('ballcam')} ball cam<br>${k('camL')}${k('camR')} turn camera &middot; ${k('mute')} mute &middot; ${k('help')} hide help &middot; hold ${k('scores')} stats<br>Charged punch = dash &middot; the charge bar sets power from 25% (tap) to 100%: damage, knockback, dash distance and ball force &middot; tap kick = chip, more = lob, <b>full = power lob</b><br>While charging, steer the punch or kick with movement (arrow)<br>Shield right as a hit lands = <b>parry</b> (3s stun)<br>Shield an incoming ball to deflect it &middot; shield breaks = 3s stun`;
   $('helpBody').innerHTML = html;
   const kb = a => `<kbd>${(BIND.kb[a] || []).map(keyLabel).join(' / ') || '—'}</kbd>`;
   const pb = a => `<kbd>${(BIND.pad[a] || []).map(padLabel).join(' / ') || '—'}</kbd>`;
@@ -4439,10 +4458,10 @@ function updateHud(dt) {
     const ch = $('charge');
     if (me.charge) {
       ch.classList.remove('hidden');
-      const c = U.clamp((me.charge.t - 0.12) / 0.6, 0, 1), cap = 1;
-      ch.firstChild.style.width = (Math.min(c, cap) * 100) + '%';
-      ch.lastChild.style.left = (cap * 100) + '%'; ch.lastChild.style.display = cap < 1 ? 'block' : 'none';
-      ch.dataset.kind = me.charge.type === 'kick' ? (c < 0.35 ? 'Chip' : c < 0.97 ? 'High chip' : 'POWER LOB') : (!me.grounded ? 'Lunge' : c < 0.05 ? 'Jab' : c < 0.99 ? 'Dash punch' : 'MAX dash');
+      const P = FB.chargePower(me.charge.t), pct = Math.round(P * 100);   // the bar shows exactly the power you'll get if you let go now
+      ch.firstChild.style.width = pct + '%';
+      ch.lastChild.style.display = 'none';
+      ch.dataset.kind = (me.charge.type === 'kick' ? (P < 0.5 ? 'Chip' : P < 0.97 ? 'Lob' : 'POWER LOB') : (!me.grounded ? 'Lunge' : P < 0.97 ? 'Dash punch' : 'MAX dash')) + ' ' + pct + '%';
     } else ch.classList.add('hidden');
     $('meBuffs').innerHTML = buffChips(me.team);
     $('ko').classList.toggle('hidden', me.alive || sim.phase !== 'play');
@@ -4648,7 +4667,7 @@ function poseHero(m, p, dt, a, t) {
   }
   if (p.charge) {
     angry = true;
-    const c = U.clamp((p.charge.t - 0.12) / 0.6, 0, 1);
+    const c = (FB.chargePower(p.charge.t) - 0.25) / 0.75;
     B.rotation.z = 0.12 + 0.2 * c;
     if (p.charge.type === 'punch') { fR.x -= 0.45 * s; fR.y += 0.1 * s; } else { ftR.x -= 0.45 * s; ftR.y += 0.22 * s; }
     const at = p.charge.type === 'punch' ? fR : ftR;
