@@ -420,7 +420,7 @@ FB.MAPS = {
     }
     const boxes = [];
     for (const sx of [1, -1]) for (const sz of [1, -1]) {
-      boxes.push({ x: 17 * sx, z: 13 * sz, hx: 3.2, hz: 2.4, h: 1.3, kind: 'ramp', dir: -sx });   // ramps rise toward midfield (dir = uphill along x)
+      boxes.push({ x: 17 * sx, z: 13 * sz, hx: 3.2, hz: 2.4, h: 1.56, kind: 'ramp', dir: -sx });   // ramps rise toward midfield (dir = uphill along x)
     }
     for (const sz of [1, -1]) boxes.push({ x: 0, z: 12 * sz, hx: 1.3, hz: 1.3, h: 3.4, kind: 'pillar' });
     const towerSpots = [[29, 11], [29, -11], [-29, 11], [-29, -11]];
@@ -1582,7 +1582,7 @@ class Sim {
 
   spawnItem() {
     const spots = [[-22, 0, 0], [22, 0, 0], [0, 19, 0], [0, -19, 0], [-11, -20, 0], [11, 20, 0], [-11, 20, 0], [11, -20, 0],
-      [17, 13, 0.65], [-17, -13, 0.65], [17, -13, 0.65], [-17, 13, 0.65], [-30, 0, 0], [30, 0, 0]];
+      [17, 13, 0.78], [-17, -13, 0.78], [17, -13, 0.78], [-17, 13, 0.78], [-30, 0, 0], [30, 0, 0]];
     const b = this.ball;
     const free = spots.filter(([x, z]) => Math.hypot(x - b.x, z - b.z) > 6 && !this.items.some(it => Math.hypot(it.x - x, it.z - z) < 4));
     if (!free.length) return;
@@ -2094,7 +2094,8 @@ const sun = new THREE.DirectionalLight(0xfff3d6, 0.85);
 sun.position.set(-30, 60, 25); sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -62, right: 62, top: 42, bottom: -42, near: 10, far: 160 });
-sun.shadow.bias = -0.0008; sun.shadow.camera.updateProjectionMatrix();
+sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.04;   // normalBias stops shadow acne shimmering on sloped surfaces (ramps)
+ sun.shadow.camera.updateProjectionMatrix();
 scene.add(sun);
 
 /* ===================================================================
@@ -2189,20 +2190,21 @@ function buildArena() {
       const sh = new THREE.Shape(), d = b.dir;
       sh.moveTo(-b.hx, 0); sh.lineTo(b.hx, 0); if (d > 0) sh.lineTo(b.hx, b.h); else sh.lineTo(-b.hx, b.h); sh.lineTo(-b.hx, 0);
       const geo = new THREE.ExtrudeGeometry(sh, { depth: b.hz * 2, bevelEnabled: false }); geo.translate(0, 0, -b.hz);
-      const m = new THREE.Mesh(geo, [toon(side), toon(top)]); m.position.set(b.x, 0, b.z); m.castShadow = m.receiveShadow = true;
+      const m = new THREE.Mesh(geo, [toon(side), toon(top)]); m.position.set(b.x, 0.012, b.z); m.castShadow = m.receiveShadow = true;
       outline(m, 1.03); scene.add(m);
       // chevrons pointing uphill + a white lip on the launch edge
-      const k = b.h / (2 * b.hx), ang = Math.atan(k), chev = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      // chevrons sit in a frame laid flat on the slope, so they never dip into the surface
+      const k = b.h / (2 * b.hx), ang = Math.atan(k), chev = new THREE.MeshBasicMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
       for (const f of [-0.45, 0.05, 0.55]) {
-        const ax = b.x + d * f * b.hx, ay = b.h * (d * (ax - b.x) + b.hx) / (2 * b.hx) + 0.03;
+        const ax = b.x + d * f * b.hx, ay = 0.012 + b.h * (d * (ax - b.x) + b.hx) / (2 * b.hx);
+        const frame = new THREE.Group(); frame.position.set(ax, ay, b.z); frame.rotation.z = d * ang; scene.add(frame);
         for (const sgn of [1, -1]) {
-          const bar = new THREE.Mesh(BOX, chev); bar.scale.set(0.9, 0.04, 0.22);
-          bar.position.set(ax - d * 0.3, ay - d * 0.3 * k, b.z + sgn * 0.42);
-          bar.rotation.order = 'YXZ'; bar.rotation.y = sgn * d * 0.6; bar.rotation.z = d * ang;
-          scene.add(bar);
+          const bar = new THREE.Mesh(BOX, chev); bar.scale.set(0.9, 0.05, 0.22);
+          bar.position.set(-d * 0.3, 0.06, sgn * 0.42); bar.rotation.y = sgn * d * 0.6;
+          frame.add(bar);
         }
       }
-      const lip = mesh(BOX, toon('#ffffff'), b.x + d * (b.hx - 0.12), b.h + 0.02, b.z, 0.26, 0.06, b.hz * 2); scene.add(lip);
+      const lip = mesh(BOX, toon('#ffffff'), b.x + d * (b.hx - 0.12), b.h + 0.05, b.z, 0.26, 0.08, b.hz * 2 + 0.02); scene.add(lip);
       continue;
     }
     const m = mesh(BOX, [toon(side), toon(side), toon(top), toon(side), toon(side), toon(side)], b.x, b.h / 2, b.z, b.hx * 2, b.h, b.hz * 2);
