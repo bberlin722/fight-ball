@@ -123,7 +123,6 @@ button:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .buff{font:900 11px Nunito;padding:1px 7px;border:2px solid var(--ink);border-radius:8px;color:#fff;text-shadow:0 1px 0 var(--ink)}
 .buff.atk,.buff.b-atk{background:#ff7a1a}.buff.def,.buff.b-def{background:#3fb8ff}.buff.b-speed{background:#3fbf4f}.buff.b-stamina{background:#e0a800}.buff.b-shield{background:#6fb7d6}
 .tg.twr{width:120px;margin-left:-60px}.tg.twr .hb{height:9px;position:relative}.tg.twr .hb u{position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;background:#1b1733}
-.tg.twr.noregen span::after{content:" \00b7 no regen";color:#ffb3bf}
 #banner{position:absolute;left:0;right:0;top:30%;text-align:center;font-family:"Luckiest Guy";font-size:clamp(48px,9vw,120px);color:#fff;-webkit-text-stroke:3px var(--ink);text-shadow:0 8px 0 var(--ink);line-height:1}
 #banner small{display:block;font-size:.3em;-webkit-text-stroke:1.5px var(--ink);text-shadow:0 4px 0 var(--ink);margin-top:8px}
 .pop{animation:pop .35s cubic-bezier(.3,1.6,.5,1)}
@@ -170,7 +169,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tlbl{font:900 11px Nunito;text-transform:uppercase;color:#fff;text-shadow:0 1px 0 var(--ink),0 0 4px rgba(0,0,0,.5);padding:0 4px}
 .tm{display:flex;align-items:center;gap:7px;width:100%;background:rgba(255,253,246,.93);border:2.5px solid var(--ink);border-left:7px solid var(--tc);border-radius:12px;padding:3px 8px 3px 3px;box-shadow:0 3px 0 var(--ink)}
 .r .tm{flex-direction:row-reverse;border-left-width:2.5px;border-right:7px solid var(--tc);padding:3px 3px 3px 8px;text-align:right}
-.tm.me{outline:3px solid var(--yel);outline-offset:1px}
+.tm.mine{outline:3px solid var(--yel);outline-offset:1px}
 .tav{width:34px;height:34px;flex:none;border-radius:50%;border:2.5px solid var(--ink);position:relative;display:grid;place-items:center}
 .tav b{position:absolute;inset:-2px;border-radius:50%;display:none;place-items:center;background:rgba(27,23,51,.7);color:#fff;font:900 14px Nunito}
 .tm.dead .tav b{display:grid}.tm.dead{background:rgba(214,208,226,.93)}.tm.dead .tav{filter:grayscale(.8)}
@@ -335,11 +334,12 @@ const FB = root.FB = root.FB || {};
 /* ---------- Arena constants ---------- */
 const HL = 44, HW = 27, CH = 9, GW = 6.5, GH = 5.5, GD = 5, WALL_H = 7.5;
 const BALL_R = 1.35, G = 26, BALL_G = 34, BALL_MASS = 3.2, CEIL = 9;
-const BALL_VY_MAX = 14;
+const BALL_VY_MAX = 14, BALL_VY_KICK = 17;   // kicks may launch higher than bumps and punches
+const KICK_FULL = 0.97, TOWER_BALL_DMG = 2.6, TOWER_BALL_MIN = 10;
 const PARRY_WINDOW = 0.22, REGEN_DELAY = 5, REGEN_RATE = 0.007, BUFF_TIME = 30;
 const SHIELD_DRAIN = 22, SHIELD_REGEN = 18, SHIELD_STUN = 3;
 const BALL_NEUTRAL_SPEED = 8, BALL_HURT_SPEED = 10;
-const TOWER_HP = 500, TOWER_R = 1.5, TOWER_H = 6.2, TOWER_RANGE = 13, TOWER_CD = 10, TOWER_SHOT_SPEED = 42;
+const TOWER_HP = 250, TOWER_R = 1.5, TOWER_H = 6.2, TOWER_RANGE = 13, TOWER_CD = 10, TOWER_SHOT_SPEED = 42;
 const BONUS_KINDS = ['atk', 'speed', 'stamina', 'def', 'shield'];
 FB.BONUS_NAMES = { atk: 'Attack +25%', speed: 'Speed +12%', stamina: 'Stamina +40%', def: 'Defense +25%', shield: 'Shield +50%' };
 const GOAL_PACK_T = 120, RESPAWN_T = 45, ASSIST_WINDOW = 15, BOX_DEPTH = 13, BOX_HALF_W = 13;   // saves only inside the penalty box drawn in front of each goal
@@ -729,7 +729,7 @@ class Sim {
 
   /* Charged attacks: the meter sets dash distance/acceleration and hit power.
      Punch: grounded = charged dash punch (costs stamina), airborne = lunge along the camera.
-     Kick: short step-in; tap = gentle chip, full charge = big lofted shot. */
+     Kick: short step-in; tap = gentle chip, more charge = higher lofted chip, FULL charge = powerful rising line drive. */
   startAttack(p, type, charge, aimYaw) {
     const A = ATTACKS[type];
     p.yaw = aimYaw;
@@ -805,8 +805,9 @@ class Sim {
           if (a.type === 'punch') {
             pow = 9 * (1 + 1.6 * c) * dashBonus; elev = a.aerial ? -0.45 : 0.1 + 0.05 * c;   // drive, or bounce shot from the air
           } else if (a.aerial) { pow = 10 * (1 + 1.2 * c); elev = 0.12; }                       // volley
-          else { const h = 4.5 + 15 * c, v = 9.5 + 4.5 * c; pow = Math.hypot(h, v); elev = Math.atan2(v, h); } // gentle chip -> big lofted shot
-          this.hitBall(p, fx, fz, elev, pow * H.ballPow, 0.3);
+          else if (c >= KICK_FULL) { pow = 36; elev = 0.24; }                                       // full charge: powerful rising line drive (clears / elevated shots)
+          else { const h = 4.5 + 15 * c, v = 9.5 + 7.8 * c; pow = Math.hypot(h, v); elev = Math.atan2(v, h); } // gentle chip -> high lofted chip
+          this.hitBall(p, fx, fz, elev, pow * H.ballPow, 0.3, a.type === 'kick' && !a.aerial ? BALL_VY_KICK : BALL_VY_MAX);
           this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow, super: pow > 24 });
           if (a.dash && a.type === 'punch') { p.vx *= 0.35; p.vz *= 0.35; a.dash.dur = Math.min(a.dash.dur, a.t - A.startup); }
         }
@@ -815,7 +816,7 @@ class Sim {
     if (a.t >= a.end) p.atk = null;
   }
 
-  hitBall(p, fx, fz, elev, pow, keep) {
+  hitBall(p, fx, fz, elev, pow, keep, vyMax) {
     const b = this.ball, pre = [b.x, b.y, b.z, b.vx, b.vy, b.vz];
     if (p) { pow *= this.mods(p.team).atk > 1 ? 1.1 : 1; b.team = p.team; }
     const ce = Math.cos(elev), se = Math.sin(elev);
@@ -823,7 +824,7 @@ class Sim {
     b.vz = b.vz * keep + fz * ce * pow;
     b.vy = b.vy * keep + se * pow;
     if (b.y <= BALL_R + 0.05 && b.vy < 0) b.vy = -b.vy * 0.5;
-    b.vy = Math.min(b.vy, BALL_VY_MAX);
+    b.vy = Math.min(b.vy, vyMax || BALL_VY_MAX);
     const s = Math.hypot(b.vx, b.vy, b.vz);
     if (s > 42) { b.vx *= 42 / s; b.vy *= 42 / s; b.vz *= 42 / s; }
     if (p) { b.lastTouch = p.id; b.lastTouchT = this.time; this.addTouch(p); this.checkSave(p, pre); }
@@ -1276,7 +1277,7 @@ class Sim {
       b.vx *= ns / s; b.vz *= ns / s;
     }
     if (b.y > WALL_H - 0.2 - BALL_R) { b.y = WALL_H - 0.2 - BALL_R; if (b.vy > 3) this.emit({ type: 'ceilHit', x: b.x, z: b.z }); b.vy = -Math.abs(b.vy) * 0.6; }
-    if (b.vy > BALL_VY_MAX) b.vy = BALL_VY_MAX;
+    if (b.vy > BALL_VY_KICK) b.vy = BALL_VY_KICK;
     const segs = this.map.segs;
     for (let i = 0, n = segs.length + this.dynSegs.length; i < n; i++) {
       const s2 = i < segs.length ? segs[i] : this.dynSegs[i - segs.length];
@@ -1295,7 +1296,7 @@ class Sim {
       const vn = b.vx * nx + b.vz * nz;
       if (vn < 0) {
         b.vx -= 1.7 * vn * nx; b.vz -= 1.7 * vn * nz;
-        if (-vn > 12 && b.team >= 0 && b.team !== tw.team && this.time > tw.ballT && b.lastTouch >= 0) { tw.ballT = this.time + 0.4; this.damageTower(tw, -vn * 1.2, this.players[b.lastTouch]); }
+        if (-vn > TOWER_BALL_MIN && b.team >= 0 && b.team !== tw.team && this.time > tw.ballT && b.lastTouch >= 0) { tw.ballT = this.time + 0.4; this.damageTower(tw, -vn * TOWER_BALL_DMG, this.players[b.lastTouch]); }
         if (-vn > 5) this.emit({ type: 'wallHit', x: b.x, y: b.y, z: b.z, v: -vn });
       }
     }
@@ -3071,13 +3072,13 @@ function renderControlHints() {
   const pad = PAD.using;
   const html = pad
     ? `<kbd>${BIND.opt.swapSticks ? 'R' : 'L'} stick</kbd> move &middot; <kbd>${BIND.opt.swapSticks ? 'L' : 'R'} stick</kbd> camera &middot; ${k('jump')} jump x2<br>${k('punch')} punch &middot; ${k('kick')} kick &middot; hold = charge &middot; ${k('sprint')} sprint<br>Punch in the air = bounce shot &middot; kick in the air = volley<br>${k('s1')} ${k('s2')} skills &middot; ${k('shield')} shield &middot; ${k('ballcam')} ball cam<br>${k('pause')} pause &middot; ${k('help')} hide help &middot; hold ${k('scores')} stats<br>Shield right as a hit lands = <b>parry</b> (3s stun)`
-    : `${k('moveF')}${k('moveL')}${k('moveB')}${k('moveR')} move &middot; ${k('jump')} jump x2 &middot; ${k('sprint')} sprint<br>${k('punch')} punch &middot; ${k('kick')} kick &middot; hold = charge<br>Punch in the air = bounce shot &middot; kick in the air = volley<br>${k('s1')} ${k('s2')} skills &middot; ${k('shield')} shield &middot; ${k('ballcam')} ball cam<br>${k('camL')}${k('camR')} turn camera &middot; ${k('mute')} mute &middot; ${k('help')} hide help &middot; hold ${k('scores')} stats<br>Charged punch = dash &middot; tap kick = chip, charge for a big loft<br>Shield right as a hit lands = <b>parry</b> (3s stun)<br>Shield an incoming ball to deflect it &middot; shield breaks = 3s stun`;
+    : `${k('moveF')}${k('moveL')}${k('moveB')}${k('moveR')} move &middot; ${k('jump')} jump x2 &middot; ${k('sprint')} sprint<br>${k('punch')} punch &middot; ${k('kick')} kick &middot; hold = charge<br>Punch in the air = bounce shot &middot; kick in the air = volley<br>${k('s1')} ${k('s2')} skills &middot; ${k('shield')} shield &middot; ${k('ballcam')} ball cam<br>${k('camL')}${k('camR')} turn camera &middot; ${k('mute')} mute &middot; ${k('help')} hide help &middot; hold ${k('scores')} stats<br>Charged punch = dash &middot; tap kick = chip, charge = high chip, <b>full charge = power drive</b><br>Shield right as a hit lands = <b>parry</b> (3s stun)<br>Shield an incoming ball to deflect it &middot; shield breaks = 3s stun`;
   $('helpBody').innerHTML = html;
   const kb = a => `<kbd>${(BIND.kb[a] || []).map(keyLabel).join(' / ') || '—'}</kbd>`;
   const pb = a => `<kbd>${(BIND.pad[a] || []).map(padLabel).join(' / ') || '—'}</kbd>`;
   $('lobbyControls').innerHTML = `${kb('moveF')}${kb('moveL')}${kb('moveB')}${kb('moveR')} move &nbsp; <kbd>Mouse</kbd> camera &nbsp; ${kb('jump')} jump &nbsp; ${kb('sprint')} sprint &nbsp; ${kb('punch')} punch &nbsp; ${kb('kick')} kick &nbsp; ${kb('s1')} ${kb('s2')} skills &nbsp; ${kb('shield')} shield &nbsp; ${kb('ballcam')} ball cam &nbsp; <kbd>Esc</kbd> pause &nbsp; hold ${kb('scores')} stats<br>
     Controller: <kbd>Sticks</kbd> move/camera &nbsp; ${pb('jump')} jump &nbsp; ${pb('punch')} punch &nbsp; ${pb('kick')} kick &nbsp; ${pb('s1')} ${pb('s2')} skills &nbsp; ${pb('shield')} shield &nbsp; ${pb('sprint')} sprint &nbsp; ${pb('ballcam')} ball cam &nbsp; ${pb('pause')} pause &nbsp; hold ${pb('scores')} stats &nbsp; <kbd>D-pad</kbd>+<kbd>${padLabel(0)}</kbd> menus<br>
-    Hold punch to charge a dash punch &middot; punch in the air lunges where the camera faces &middot; tap kick to chip, charge it for a big loft &middot; raise shield just as a hit lands to <b>parry</b> and stun for 3s &middot; a colored ball belongs to the team that last struck it and hurts the other team when fast; shield to deflect it &middot; holding the shield too long breaks it (3s stun) &middot; destroy enemy towers for a team bonus until half time &middot; grab health packs (one lands in each goal 2 minutes into a round) and stamina pads`;
+    Hold punch to charge a dash punch &middot; punch in the air lunges where the camera faces &middot; tap kick to chip, charge it for a higher chip, max the meter for a rising power drive to clear or shoot &middot; raise shield just as a hit lands to <b>parry</b> and stun for 3s &middot; a colored ball belongs to the team that last struck it and hurts the other team when fast; shield to deflect it &middot; holding the shield too long breaks it (3s stun) &middot; destroy enemy towers for a team bonus until half time &middot; grab health packs (one lands in each goal 2 minutes into a round) and stamina pads`;
   if (APP.state === 'match' && APP.sim) buildAbilityLabels();
 }
 
@@ -3947,7 +3948,7 @@ function buildHudStatic() {
   tagEls.length = 0; sim.players.forEach(p => tagEls.push($('tg' + p.id)));
   const leftTeam = me ? me.team : 0;
   APP.leftTeam = leftTeam;
-  const card = p => `<div class="tm${p.id === APP.meId ? ' me' : ''}" id="tm${p.id}" style="--tc:${FB.TEAM_COLORS[p.team]}"><div class="tav" style="${avStyle(p.heroId)}"><b></b></div><div class="tmi"><span>${p.id === APP.meId ? 'You' : p.name}<em>${FB.ROLE_NAMES[p.role]}</em></span><div class="hb"><i></i></div><small></small></div></div>`;
+  const card = p => `<div class="tm${p.id === APP.meId ? ' mine' : ''}" id="tm${p.id}" style="--tc:${FB.TEAM_COLORS[p.team]}"><div class="tav" style="${avStyle(p.heroId)}"><b></b></div><div class="tmi"><span>${p.id === APP.meId ? 'You' : p.name}<em>${FB.ROLE_NAMES[p.role]}</em></span><div class="hb"><i></i></div><small></small></div></div>`;
   $('teamL').innerHTML = `<div class="tlbl">${me ? 'Your team' : FB.TEAM_NAMES[0]} &middot; ${FB.TEAM_NAMES[leftTeam]}</div>` + sim.players.filter(p => p.team === leftTeam).map(card).join('') + '<div class="buffs" id="bL"></div>';
   $('teamR').innerHTML = `<div class="tlbl">${me ? 'Enemy' : FB.TEAM_NAMES[1]} &middot; ${FB.TEAM_NAMES[1 - leftTeam]}</div>` + sim.players.filter(p => p.team !== leftTeam).map(card).join('') + '<div class="buffs" id="bR"></div>';
   $('annList').innerHTML = ''; $('stats').classList.add('hidden');
@@ -3975,7 +3976,7 @@ function buildTowerTags(sim) {
   document.querySelectorAll('.tg.twr').forEach(e => e.remove()); towerTagEls.length = 0;
   for (const tw of sim.towers) {
     const d = document.createElement('div'); d.className = 'tg twr';
-    d.innerHTML = `<span>${FB.TEAM_NAMES[tw.team]} tower</span><div class="hb"><i style="background:${FB.TEAM_COLORS[tw.team]}"></i><u></u></div>`;
+    d.innerHTML = `<span>${FB.TEAM_NAMES[tw.team]} tower</span><div class="hb"><i style="background:${FB.TEAM_COLORS[tw.team]}"></i></div>`;
     $('tags').appendChild(d); towerTagEls.push(d);
   }
 }
@@ -4075,7 +4076,7 @@ function updateHud(dt) {
     const d = camera.position.distanceTo(v3.set(tw.x, 3, tw.z)), sc = U.clamp(22 / d, 0.55, 1.15);
     el.style.display = 'block'; el.style.transform = `translate(${pr.x}px,${pr.y - 30}px) scale(${sc})`;
     const f = tw.hp / tw.maxHp, bar = el.lastChild.firstChild;
-    bar.style.width = (f * 100) + '%'; el.classList.toggle('noregen', f <= 0.5);
+    bar.style.width = (f * 100) + '%';
   });
   for (const n of numEls) {
     if (n.t <= 0) continue; n.t -= dt; n.y += dt * 2.2;
@@ -4101,7 +4102,7 @@ function updateHud(dt) {
       const c = U.clamp((me.charge.t - 0.12) / 0.6, 0, 1), cap = 1;
       ch.firstChild.style.width = (Math.min(c, cap) * 100) + '%';
       ch.lastChild.style.left = (cap * 100) + '%'; ch.lastChild.style.display = cap < 1 ? 'block' : 'none';
-      ch.dataset.kind = me.charge.type === 'kick' ? (c < 0.35 ? 'Chip' : c < 0.75 ? 'Lob' : 'Big loft') : (!me.grounded ? 'Lunge' : c < 0.05 ? 'Jab' : c < 0.99 ? 'Dash punch' : 'MAX dash');
+      ch.dataset.kind = me.charge.type === 'kick' ? (c < 0.35 ? 'Chip' : c < 0.97 ? 'High chip' : 'POWER DRIVE') : (!me.grounded ? 'Lunge' : c < 0.05 ? 'Jab' : c < 0.99 ? 'Dash punch' : 'MAX dash');
     } else ch.classList.add('hidden');
     $('meBuffs').innerHTML = buffChips(me.team);
     $('ko').classList.toggle('hidden', me.alive || sim.phase !== 'play');
