@@ -2864,9 +2864,12 @@ function updateKickArc(me, m, c, yaw, col, t) {
   const path = FB.kickPath(c, me.hero.ballPow, 0.25);
   // ease the arc in while charging: it grows from the feet to the full flight as the meter fills
   const grow = 0.35 + 0.65 * Math.min(1, c / 0.6 + 0.15);
-  const n = Math.max(3, Math.round(path.length * grow));
+  let n = Math.max(3, Math.round(path.length * grow)), hitWall = false;
+  // stop the arc where it would meet the arena wall
+  for (let i = 1; i < n; i++) { const X = ox + fx * path[i][0], Z = oz + fz * path[i][0]; if (Math.abs(X) > C.HL - 0.6 || Math.abs(Z) > C.HW - 0.6) { n = Math.max(2, i); hitWall = true; break; } }
   const pts = path.slice(0, n).map(([x, y]) => new THREE.Vector3(ox + fx * x, m.g.position.y + y, oz + fz * x));
-  const r = 0.1 + 0.12 * c, key = `${n}|${r.toFixed(3)}|${ox.toFixed(2)}|${oz.toFixed(2)}|${yaw.toFixed(3)}|${c.toFixed(3)}`;
+  if (pts.length < 3) pts.splice(1, 0, pts[0].clone().lerp(pts[pts.length - 1], 0.5));
+  const r = 0.15 + 0.13 * c, key = `${n}|${hitWall}|${r.toFixed(3)}|${ox.toFixed(2)}|${oz.toFixed(2)}|${yaw.toFixed(3)}|${c.toFixed(3)}`;
   if (key !== K.key) {
     K.key = key;
     const curve = new THREE.CatmullRomCurve3(pts), segs = Math.min(80, Math.max(12, pts.length * 2));
@@ -2879,7 +2882,7 @@ function updateKickArc(me, m, c, yaw, col, t) {
     for (const h of [K.head, K.headO]) { h.position.copy(a).addScaledVector(_tan, -hl * 0.35); h.quaternion.setFromUnitVectors(_up, _tan); }
     K.head.scale.set(hw, hl, hw); K.headO.scale.set(hw + 0.06, hl + 0.08, hw + 0.06);
     const land = path[path.length - 1];
-    K.ring.visible = n >= path.length;
+    K.ring.visible = n >= path.length && !hitWall;
     K.ring.position.set(ox + fx * land[0], m.g.position.y + 0.06, oz + fz * land[0]);
   }
   K.mat.color.copy(col);
@@ -2893,8 +2896,8 @@ function updateAimArrow(sim, t) {
   const yaw = me.charge.yaw != null ? me.charge.yaw : me.aimYaw;
   let start, len, pitch, thick, y;
   if (kick && me.grounded) {
-    _arrowCol.set(full ? '#ffd23f' : FB.TEAM_COLORS[me.team]);
-    if (full) _arrowCol.lerp(new THREE.Color('#ffffff'), 0.35 + 0.35 * Math.sin(t * 22));
+    _arrowCol.set(full ? '#ffc21a' : FB.TEAM_COLORS[me.team]);
+    if (full) _arrowCol.lerp(new THREE.Color('#ffffff'), 0.15 + 0.2 * Math.sin(t * 22));
     A.g.visible = false; updateKickArc(me, m, c, yaw, _arrowCol, t); return;
   }
   kickArc.g.visible = false;
