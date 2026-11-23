@@ -2819,7 +2819,7 @@ const aimArrow = (() => {
   const shaft = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat); shaft.geometry.translate(0.5, 0, 0);
   const head = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 4), mat); head.geometry.rotateZ(-Math.PI / 2); head.geometry.translate(0.5, 0, 0); head.rotation.x = Math.PI / 4;
   const shaftO = new THREE.Mesh(shaft.geometry, omat), headO = new THREE.Mesh(head.geometry, omat); headO.rotation.x = Math.PI / 4;
-  g.add(shaftO, headO, shaft, head); g.visible = false; g.renderOrder = 10; [shaft, head, shaftO, headO].forEach((m, i) => { m.renderOrder = i < 2 ? 10 : 11; });
+  g.add(shaftO, headO, shaft, head); g.visible = false; g.renderOrder = 10; [shaftO, headO].forEach(m => { m.renderOrder = 10; }); [shaft, head].forEach(m => { m.renderOrder = 11; });
   g.rotation.order = 'YZX';
   scene.add(g);
   return { g, mat, shaft, head, shaftO, headO };
