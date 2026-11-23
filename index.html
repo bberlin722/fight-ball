@@ -61,7 +61,7 @@ button:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .you{background:var(--yel);border:2px solid var(--ink);border-radius:6px;padding:0 6px;font:900 11px Nunito;color:var(--ink)}
 .acts{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .acts button{padding:4px 10px;min-height:34px;font-size:13px;border-width:2px;box-shadow:0 3px 0 var(--ink);border-radius:9px}
-.hero-pick{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.hero-pick{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-bottom:12px}
 .hp{border:3px solid var(--ink);border-radius:12px;padding:6px 2px 4px;text-align:center;background:#fff;cursor:pointer;font:900 12px Nunito}
 .hp .av{width:42px;height:42px;margin:0 auto 4px}
 .hp .av::after{top:12px;right:5px;width:10px;height:10px;box-shadow:-11px 0 0 -2px #fff,-11px 0 0 0 var(--ink)}
@@ -86,7 +86,7 @@ button:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .controls{font-size:13px;color:#fff;text-shadow:0 1px 0 var(--ink),0 0 6px rgba(0,0,0,.4);font-weight:800}
 .controls kbd{background:#fff;color:var(--ink);border:2px solid var(--ink);border-radius:6px;padding:0 5px;font:900 12px Nunito;text-shadow:none}
 @media(max-width:980px){.grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.mid{grid-column:1/-1;order:-1}}
-@media(max-width:600px){.grid{grid-template-columns:minmax(0,1fr)}.hero-pick{grid-template-columns:repeat(3,minmax(0,1fr))}#startBtn{width:100%}}
+@media(max-width:600px){.grid{grid-template-columns:minmax(0,1fr)}.hero-pick{grid-template-columns:repeat(4,minmax(0,1fr))}#startBtn{width:100%}}
 
 /* ---------- HUD ---------- */
 #hud{position:fixed;inset:0;pointer-events:none}
@@ -335,6 +335,7 @@ const FB = root.FB = root.FB || {};
 const HL = 44, HW = 27, CH = 9, GW = 6.5, GH = 5.5, GD = 5, WALL_H = 7.5;
 const BALL_R = 1.35, G = 26, BALL_G = 34, BALL_MASS = 3.2, CEIL = 9;
 const BALL_VY_MAX = 14, BALL_VY_KICK = 17;   // kicks may launch higher than bumps and punches
+const BUMPER_LIFE = 10, BUMPER_R = 0.85, BUMPER_H = 1.7, BUMPER_KB = 17, BUMPER_DMG = 5, BUMPER_E = 1.25, BUMPER_BALL_MIN = 13, SUIT_TIME = 15;
 const KICK_FULL = 0.97, TOWER_BALL_DMG = 2.6, TOWER_BALL_MIN = 10;
 const PARRY_WINDOW = 0.22, REGEN_DELAY = 5, REGEN_RATE = 0.007, BUFF_TIME = 30;
 const SHIELD_DRAIN = 22, SHIELD_REGEN = 18, SHIELD_STUN = 3;
@@ -417,9 +418,14 @@ FB.HEROES = {
     hp: 180, speed: 8, sprint: 1.5, stam: 1.1, weight: 1.1, punch: 10, kick: 13, ballPow: 1.0, reach: 0.1, shieldHp: 60, jump: 10,
     s1: { id: 'pulse', name: 'Pulse Heal', cd: 10, desc: 'Heal yourself and nearby allies, knock back close enemies.' },
     s2: { id: 'wave', name: 'Shockwave', cd: 14, desc: 'Send a wide wave that bowls over enemies and drives the ball.' },
-    blurb: 'Keeps the team standing and controls lanes with a wide shockwave.' }
+    blurb: 'Keeps the team standing and controls lanes with a wide shockwave.' },
+  bumper: { name: 'Bumper', role: 'Bouncer Defender', color: '#e07a4f', accent: '#7a3220', size: 1.12,
+    hp: 220, speed: 7.2, sprint: 1.5, stam: 1.0, weight: 1.45, punch: 9, kick: 12, ballPow: 1.0, reach: 0.2, shieldHp: 80, jump: 9.8,
+    s1: { id: 'bumpers', name: 'Spring Bumpers', cd: 16, desc: 'Throw out three springy bumpers for 10s. They bounce away enemies (lighter heroes fly further) and the ball.' },
+    s2: { id: 'suit', name: 'Bumper Suit', cd: 35, desc: 'Inflate a bouncy suit for 15s: takes no damage and sends every hit, and the ball, straight back at full strength.' },
+    blurb: 'Turns the space in front of goal into a pinball table. Nothing gets through his suit.' }
 };
-FB.HERO_ORDER = ['bulwark', 'blaze', 'volt', 'atlas', 'zip', 'nova'];
+FB.HERO_ORDER = ['bulwark', 'blaze', 'volt', 'atlas', 'zip', 'nova', 'bumper'];
 FB.ROLES = ['FWD', 'DEF', 'GK'];
 FB.ROLE_NAMES = { FWD: 'Forward', DEF: 'Defender', GK: 'Goalie' };
 FB.TEAM_NAMES = ['Blue', 'Orange'];
@@ -451,6 +457,7 @@ class Sim {
     this.ball = { x: 0, y: BALL_R, z: 0, vx: 0, vy: 0, vz: 0, px: 0, py: BALL_R, pz: 0, lastTouch: -1, lastTouchT: -99, grav: null, team: -1 };
     this.projs = [];
     this.dynSegs = [];
+    this.bumpers = [];
     this.effects = [];
     this.score = [0, 0];
     this.half = 1;
@@ -481,7 +488,7 @@ class Sim {
       shieldHp: h.shieldHp, maxShield: h.shieldHp, baseShield: h.shieldHp, baseStam: 100 * h.stam, shielding: false, shieldBrokenT: 0, ballHitT: -9,
       alive: true, respawnT: 0, invulnT: 0, stunT: 0, lockT: 0, dizzyT: 0,
       grounded: true, jumps: 0, atk: null, charge: null, skill: null, combo: 0, comboT: 0,
-      cd1: 0, cd2: 0, intangible: false, lastHitBy: -1, lastHitT: -99, slowT: 0,
+      cd1: 0, cd2: 0, suitT: 0, intangible: false, lastHitBy: -1, lastHitT: -99, slowT: 0,
       prev: FB.emptyInput(), anim: { walk: 0, land: 0, hitFlash: 0 },
       shieldUpT: -9, lastShieldStart: -9, lastDmgT: -9,
       stats: { goals: 0, assists: 0, kos: 0, deaths: 0, dmg: 0, saves: 0, parries: 0, items: 0, towers: 0, deflects: 0 }
@@ -556,7 +563,8 @@ class Sim {
     for (const p of this.players) { this.placePlayer(p, true); p.cd1 = 0; p.cd2 = 0; p.respawnT = 0; }
     const b = this.ball;
     b.x = b.px = 0; b.y = b.py = BALL_R + 3; b.z = b.pz = 0; b.safeX = 0; b.safeZ = 0; b.vx = b.vy = b.vz = 0; b.lastTouch = -1; b.grav = null; b.team = -1;
-    this.projs.length = 0; this.dynSegs.length = 0; this.effects.length = 0;
+    this.projs.length = 0; this.dynSegs.length = 0; this.effects.length = 0; this.bumpers.length = 0;
+    for (const p of this.players) p.suitT = 0;
     if (this.items) { this.items.length = 0; this.itemT = Math.max(this.itemT, 15); }
     this.roundT = 0; this.goalPacksDone = false;
     if (this.pads) for (const pd of this.pads) { pd.active = true; pd.t = 0; }
@@ -603,12 +611,14 @@ class Sim {
       } else { b.vx = b.vz = 0; b.vy -= BALL_G * h; b.y += b.vy * h; if (b.y < BALL_R) { b.y = BALL_R; b.vy = 0; } }
       this.collidePlayers();
       this.collidePlayersBall();
+      if (this.bumpers.length) this.collideBumpers();
       for (const p of this.players) if (p.alive) this.contain(p, p.r);
       this.contain(b, BALL_R);
     }
     for (const p of this.players) if (p.alive && p.atk) this.tickAttack(p, physDt);
     this.updateProjectiles(physDt);
     this.updateEffects(physDt);
+    for (let i = this.bumpers.length - 1; i >= 0; i--) { this.bumpers[i].life -= physDt; if (this.bumpers[i].life <= 0) this.bumpers.splice(i, 1); }
     if (!frozen) { this.updateItems(physDt); this.updatePads(physDt); this.updateTowers(physDt); if (this.phase === 'play') this.roundT += physDt; }
 
     if (this.phase === 'play') {
@@ -646,7 +656,7 @@ class Sim {
     }
     if (frozen) inp = Object.assign({}, NEUTRAL, { aimYaw: inp.aimYaw });
     const H = p.hero;
-    p.cd1 = Math.max(0, p.cd1 - dt); p.cd2 = Math.max(0, p.cd2 - dt);
+    p.cd1 = Math.max(0, p.cd1 - dt); p.cd2 = Math.max(0, p.cd2 - dt); if (p.suitT > 0) p.suitT = Math.max(0, p.suitT - dt);
     p.stunT = Math.max(0, p.stunT - dt); p.lockT = Math.max(0, p.lockT - dt);
     p.invulnT = Math.max(0, p.invulnT - dt); p.dizzyT = Math.max(0, p.dizzyT - dt);
     p.slowT = Math.max(0, p.slowT - dt);
@@ -833,6 +843,11 @@ class Sim {
   hitPlayer(att, q, dmg, kb, dx, dz, lift, kind) {
     if (!q.alive || q.invulnT > 0 || q.intangible) return false;
     const n = Math.hypot(dx, dz) || 1; dx /= n; dz /= n;
+    if (q.suitT > 0 && att && att.team !== q.team) {   // Bumper Suit: no damage, the hit goes straight back
+      this.emit({ type: 'reflect', id: q.id, by: att.id, x: q.x + dx * -0.6, y: q.y + q.height * 0.6, z: q.z + dz * -0.6 });
+      if (kind !== 'reflect' && kind !== 'bumper' && att.alive) this.hitPlayer(q, att, dmg, kb, -dx, -dz, Math.max(lift, 0.25), 'reflect');
+      return false;
+    }
     dmg *= this.mods(att.team).atk; const dm = this.mods(q.team).def; dmg *= dm; kb *= dm < 1 ? 0.85 : 1;
     if (q.shielding && q.shieldHp > 0 && (kind === 'punch' || kind === 'kick') && this.time - q.shieldUpT <= PARRY_WINDOW) {
       att.stunT = 3; att.dizzyT = 3; att.atk = null; att.charge = null; if (att.skill && !att.skill.armor) att.skill = null;
@@ -876,7 +891,7 @@ class Sim {
   knockOut(q, killer) {
     if (!killer && q.lastHitBy >= 0 && this.time - q.lastHitT < 6) killer = this.players[q.lastHitBy];
     q.hp = 0; q.alive = false; q.respawnT = RESPAWN_T; q.stats.deaths++;
-    q.atk = q.charge = q.skill = null; q.shielding = false;
+    q.atk = q.charge = q.skill = null; q.shielding = false; q.suitT = 0;
     if (killer && killer.team !== q.team) killer.stats.kos++;
     this.emit({ type: 'ko', id: q.id, by: killer ? killer.id : -1, x: q.x, y: q.y + 1, z: q.z });
   }
@@ -901,6 +916,16 @@ class Sim {
         s.life = 4.5; s.team = p.team; s.id = this.nextId++;
         this.dynSegs.push(s); p.lockT = 0.25; break;
       }
+      case 'bumpers': {
+        for (let i = this.bumpers.length - 1; i >= 0; i--) if (this.bumpers[i].owner === p.id) this.bumpers.splice(i, 1);
+        const px = -fz, pz = fx;
+        for (const [fwd, lat] of [[4.2, 0], [3.1, 2.7], [3.1, -2.7]]) {
+          const x = clamp(p.x + fx * fwd + px * lat, -HL + 1.2, HL - 1.2), z = clamp(p.z + fz * fwd + pz * lat, -HW + 1.2, HW - 1.2);
+          this.bumpers.push({ id: this.nextId++, owner: p.id, team: p.team, x, z, r: BUMPER_R, h: BUMPER_H, life: BUMPER_LIFE, cool: {}, ballT: 0 });
+        }
+        p.lockT = 0.25; break;
+      }
+      case 'suit': p.suitT = SUIT_TIME; p.lockT = 0.2; break;
       case 'grav': this.effects.push({ type: 'grav', owner: p.id, t: 1.1, captured: null }); p.lockT = 0.15; break;
       case 'blink': p.skill = { id, t: 0, dur: 0.17, fx, fz, lockMove: true }; p.intangible = true; break;
       case 'cyclone': p.skill = { id, t: 0, dur: 0.55, fx, fz, hit: new Set(), ball: false, lockMove: true, armor: true }; break;
@@ -1340,6 +1365,13 @@ class Sim {
       if (ny > 0.6 && b.y > p.y + p.height - 0.2) { b.vy = Math.max(b.vy, 3); }
       const rel = (b.vx - p.vx) * nx + (b.vy - p.vy) * ny + (b.vz - p.vz) * nz;
       const hostile = b.team >= 0 && b.team !== p.team && -rel > BALL_HURT_SPEED && this.time > p.ballHitT && p.invulnT <= 0 && !p.intangible;
+      if (p.suitT > 0 && rel < -3) {   // Bumper Suit: the ball bounces straight back at the speed it came in, now his team's ball
+        const k = -2 * rel; b.vx += k * nx; b.vy += k * ny; b.vz += k * nz; b.vy = Math.min(Math.max(b.vy, 2), BALL_VY_KICK);
+        b.team = p.team; b.lastTouch = p.id; b.lastTouchT = this.time; this.addTouch(p);
+        if (this.time > p.ballHitT) { p.ballHitT = this.time + 0.2; this.emit({ type: 'reflect', id: p.id, by: -1, x: b.x - nx * BALL_R, y: b.y - ny * BALL_R, z: b.z - nz * BALL_R, ball: 1 }); }
+        this.checkSave(p, pre);
+        continue;
+      }
       if (rel < 0 && p.shielding && -rel > 4) {
         // shield: blocks damage, takes damage scaled to ball speed, deflects the ball harder, takes possession
         p.ballHitT = this.time + 0.3;
@@ -1364,6 +1396,41 @@ class Sim {
       }
       b.vy = Math.min(b.vy, BALL_VY_MAX);
       this.checkSave(p, pre);
+    }
+  }
+
+  /* Spring Bumpers: solid posts for enemies and the ball. Enemies get bounced away (hitPlayer scales knockback by weight); allies walk through. */
+  collideBumpers() {
+    const b = this.ball;
+    for (const bm of this.bumpers) {
+      const owner = this.players[bm.owner];
+      for (const q of this.players) {
+        if (!q.alive || q.team === bm.team || q.intangible || q.y > bm.h) continue;
+        const dx = q.x - bm.x, dz = q.z - bm.z, d = Math.hypot(dx, dz), m = bm.r + q.r;
+        if (d >= m) continue;
+        const nx = d > 1e-4 ? dx / d : 1, nz = d > 1e-4 ? dz / d : 0;
+        q.x = bm.x + nx * m; q.z = bm.z + nz * m;
+        const vn = q.vx * nx + q.vz * nz; if (vn < 0) { q.vx -= vn * nx; q.vz -= vn * nz; }
+        if (this.time < (bm.cool[q.id] || 0)) continue;
+        bm.cool[q.id] = this.time + 0.45;
+        if (!this.hitPlayer(owner, q, BUMPER_DMG, BUMPER_KB, nx, nz, 0.32, 'bumper') && !(q.suitT > 0)) { q.vx += nx * 9 / q.hero.weight; q.vz += nz * 9 / q.hero.weight; }
+        this.emit({ type: 'bump', bid: bm.id, id: q.id, x: bm.x + nx * bm.r, y: Math.min(q.y + 1, bm.h), z: bm.z + nz * bm.r });
+      }
+      if (b.y - BALL_R < bm.h) {
+        const dx = b.x - bm.x, dz = b.z - bm.z, d = Math.hypot(dx, dz), m = bm.r + BALL_R;
+        if (d < m) {
+          const nx = d > 1e-4 ? dx / d : 1, nz = d > 1e-4 ? dz / d : 0;
+          b.x = bm.x + nx * m; b.z = bm.z + nz * m;
+          const vn = b.vx * nx + b.vz * nz;
+          if (vn < 0) {
+            b.vx -= (1 + BUMPER_E) * vn * nx; b.vz -= (1 + BUMPER_E) * vn * nz;
+            const out = b.vx * nx + b.vz * nz; if (out < BUMPER_BALL_MIN) { b.vx += nx * (BUMPER_BALL_MIN - out); b.vz += nz * (BUMPER_BALL_MIN - out); }
+            b.vy = Math.max(b.vy, 3);
+            b.team = bm.team; b.lastTouch = bm.owner; b.lastTouchT = this.time;
+            if (this.time > bm.ballT) { bm.ballT = this.time + 0.15; this.emit({ type: 'bump', bid: bm.id, id: -1, x: bm.x + nx * bm.r, y: Math.min(b.y, bm.h), z: bm.z + nz * bm.r, ball: 1 }); }
+          }
+        }
+      }
     }
   }
 
@@ -1711,6 +1778,7 @@ class BotBrain {
     } else if (mode === 'guard') {
       tx = ownX + dir * 3.2; tz = clamp(b.z * 0.4, -GW + 1.2, GW - 1.2);
       aim = Math.atan2(b.z - p.z, b.x - p.x);
+      if (threat && ballFromOwn < 24 && p.heroId === 'bumper' && p.cd1 <= 0 && Math.random() < d.skill) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
       if (threat && ballFromOwn < 22 && p.heroId === 'atlas') {
         if (p.cd2 <= 0 && Math.random() < d.skill) inp.s2 = true;
         else if (p.cd1 <= 0 && ballFromOwn < 14 && Math.random() < d.skill * 0.5) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
@@ -1720,6 +1788,7 @@ class BotBrain {
       tx = clamp(b.x - dir * 14, -HL + 6, HL - 6); if ((tx - ownX) * dir < 8) tx = ownX + dir * 8;
       tz = b.z * 0.55; aim = Math.atan2(b.z - p.z, b.x - p.x);
       sprint = Math.hypot(tx - p.x, tz - p.z) > 10;
+      if (threat && ballFromOwn < 30 && p.heroId === 'bumper' && p.cd1 <= 0 && Math.hypot(b.x - p.x, b.z - p.z) < 14 && Math.random() < d.skill * 0.5) inp.s1 = true;
     } else if (mode === 'support') {
       tx = clamp(b.x + dir * 9, -HL + 8, HL - 8); tz = clamp(-b.z * 0.4 + (p.slot % 2 ? 6 : -6), -HW + 4, HW - 4);
       aim = Math.atan2(b.z - p.z, b.x - p.x);
@@ -1731,6 +1800,7 @@ class BotBrain {
         const r = Math.random();
         if (r < d.skill * 0.35 && p.cd1 <= 0 && ['bash', 'flurry', 'pulse', 'blink'].includes(p.hero.s1.id) && p.hero.s1.id !== 'blink') inp.s1 = true;
         else if (r < d.skill * 0.5 && p.cd2 <= 0 && ['slam', 'uppercut', 'cyclone'].includes(p.hero.s2.id)) inp.s2 = true;
+        else if (p.heroId === 'bumper' && p.cd2 <= 0 && r < d.skill * 0.6) inp.s2 = true;
         else this.press = { key: Math.random() < 0.6 ? 'punch' : 'kick', until: sim.time + 0.05 + Math.random() * 0.15 };
         this.nextAtk = sim.time + 0.25 + (1 - d.aggro) * 0.4;
       } else if (nearD < 9 && p.heroId === 'volt' && p.cd1 <= 0 && Math.random() < d.skill) inp.s1 = true;
@@ -1853,6 +1923,7 @@ const SFX = {
   hit(p) { this.burst(0.12, 900 + p * 40, 0.5); this.tone(160, 0.12, 'square', 0.18, 60); },
   kick(p) { this.tone(110 + p * 3, 0.16, 'sine', 0.55, 45); this.burst(0.06, 2500, 0.2); },
   block() { this.tone(900, 0.08, 'triangle', 0.2, 1400); },
+  boing(p) { this.tone(180 + (p || 0) * 6, 0.22, 'sine', 0.35, 620); this.tone(90, 0.12, 'triangle', 0.15, 240); },
   shatter() { this.burst(0.4, 3000, 0.6); this.tone(700, 0.35, 'sawtooth', 0.15, 120); },
   jump() { this.tone(420, 0.1, 'sine', 0.12, 760); },
   whistle() { this.tone(2100, 0.18, 'sine', 0.2); setTimeout(() => this.tone(2100, 0.45, 'sine', 0.2), 220); },
@@ -2301,6 +2372,19 @@ function buildHero(heroId, team, isMe, slot) {
     const cl = new THREE.Mesh(new THREE.PlaneGeometry(0.85 * s, 1.05 * s, 1, 4), cm); cl.position.y = -0.52 * s; cl.rotation.y = Math.PI / 2; cl.castShadow = true; cape.add(cl);
     ex.cape = cape;
   }
+  if (heroId === 'bumper') {
+    for (const z of [1, -1]) { const sb = add(mesh(new THREE.TorusGeometry(0.2 * s, 0.11 * s, 10, 22), M('#ff4d6d'), -0.02 * s, Y(1.4), z * 0.48 * s), 1.1); sb.rotation.x = Math.PI / 2; add(mesh(SPH, white, -0.02 * s, Y(1.4), z * 0.48 * s, 0.15 * s, 0.09 * s, 0.15 * s)); }
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.46 * s, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.42), acc); cap.position.set(0.03 * s, Y(1.8), 0); add(cap, 1.04);
+    const coil = new THREE.Group(); coil.position.set(0, Y(2.2), 0); body.add(coil);
+    for (let i = 0; i < 4; i++) { const c = mesh(new THREE.TorusGeometry(0.12 * s, 0.03 * s, 6, 16), metal, 0, i * 0.08 * s, 0); c.rotation.x = Math.PI / 2; coil.add(c); }
+    const knob = mesh(SPH, M('#ff4d6d'), 0, 0.4 * s, 0, 0.13 * s); outline(knob, 1.15); coil.add(knob); ex.coil = coil;
+    const belly = add(mesh(new THREE.TorusGeometry(0.5 * s, 0.09 * s, 10, 28), M('#ff4d6d'), 0, Y(0.95), 0), 1.08); belly.rotation.x = Math.PI / 2;
+    const suit = new THREE.Group(); suit.position.y = 1.0 * s; suit.visible = false; g.add(suit);
+    const sm = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 20), new THREE.MeshBasicMaterial({ color: tc, transparent: true, opacity: 0.32, depthWrite: false }));
+    sm.scale.set(1.35 * s, 1.25 * s, 1.35 * s); suit.add(sm);
+    for (const y of [-0.45, 0, 0.45]) { const band = new THREE.Mesh(new THREE.TorusGeometry(1.3 * s * Math.cos(y), 0.07 * s, 8, 36), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })); band.rotation.x = Math.PI / 2; band.position.y = Math.sin(y) * 1.25 * s; suit.add(band); }
+    ex.suit = suit; ex.suitMesh = sm;
+  }
   if (heroId === 'zip') {
     const wc = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 1.1, 2.3, 28, 1, true), new THREE.MeshBasicMaterial({ map: WIND_TEX, color: 0xe8fff0, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     wc.position.y = 1.1; wc.visible = false; g.add(wc); ex.wind = wc;
@@ -2698,7 +2782,36 @@ function syncPads(sim, t) {
     m.ring.material.opacity = pd.active ? 0.95 : 0.3;
   });
 }
-const projMeshes = new Map(), segMeshes = new Map();
+const projMeshes = new Map(), segMeshes = new Map(), bumperMeshes = new Map();
+function makeBumperMesh(team) {
+  const g = new THREE.Group(), tc = TEAMC[team];
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.05, 0.3, 24), rimify(toon('#2b2747'))); base.position.y = 0.15; outline(base, 1.06); g.add(base);
+  const post = new THREE.Group(); g.add(post);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.85, 1.05, 28), rimify(toon(tc))); body.position.y = 0.82; outline(body, 1.05); body.castShadow = true; post.add(body);
+  for (const y of [0.55, 1.05]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.86, 0.09, 8, 30), rimify(toon('#ffffff'))); r.rotation.x = Math.PI / 2; r.position.y = y; post.add(r); }
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.78, 0.3, 24), rimify(toon('#ff4d6d'))); cap.position.y = 1.5; outline(cap, 1.06); post.add(cap);
+  const star = new THREE.Mesh(new THREE.CircleGeometry(0.3, 5), new THREE.MeshBasicMaterial({ color: 0xffe14d })); star.rotation.x = -Math.PI / 2; star.position.y = 1.66; post.add(star);
+  const glow = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.5, 32), new THREE.MeshBasicMaterial({ color: tc, transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending }));
+  glow.rotation.x = -Math.PI / 2; glow.position.y = 0.05; g.add(glow);
+  g.userData = { post, glow, squash: 0, born: perfNow() };
+  return g;
+}
+function syncBumpers(sim, dt) {
+  const seen = new Set(), now = perfNow();
+  for (const b of sim.bumpers || []) {
+    seen.add(b.id);
+    let m = bumperMeshes.get(b.id);
+    if (!m) { m = makeBumperMesh(b.team); scene.add(m); bumperMeshes.set(b.id, m); burst(b.x, 0.5, b.z, 8, ['#ffffff', FB.TEAM_COLORS[b.team]], 4, 0.2, 0.4, 0, 'puff'); }
+    m.position.set(b.x, 0, b.z);
+    const u = m.userData, age = (now - u.born) / 1000, pop = age < 0.35 ? 1 - Math.pow(1 - age / 0.35, 3) * Math.cos(age * 18) : 1;
+    u.squash = Math.max(0, u.squash - dt * 4);
+    const sq = u.squash * Math.cos((1 - u.squash) * 20);
+    u.post.scale.set(pop * (1 + sq * 0.25), Math.max(0.05, pop * (1 - sq * 0.3)), pop * (1 + sq * 0.25));
+    const fade = b.life < 1.5 ? (Math.sin(now * 0.03) > 0 ? 1 : 0.35) : 1;
+    u.glow.material.opacity = 0.4 * fade; m.visible = fade > 0.5 || b.life > 0.4;
+  }
+  for (const [id, m] of bumperMeshes) if (!seen.has(id)) { scene.remove(m); bumperMeshes.delete(id); }
+}
 function syncProjectiles(sim) {
   const seen = new Set();
   for (const p of sim.projs) {
@@ -3225,7 +3338,7 @@ function lobbyClick(e) {
   if (slot) { LOBBY.sel = [+slot.dataset.t, +slot.dataset.i]; renderLobby(); return; }
   if (hp) { const s = LOBBY.teams[LOBBY.sel[0]][LOBBY.sel[1]]; if (s.type !== 'empty') { s.hero = hp.dataset.h; renderLobby(); } }
 }
-function randomHero(i) { const pref = [['blaze', 'zip', 'volt', 'nova'], ['bulwark', 'nova', 'volt', 'blaze'], ['atlas', 'bulwark']][i]; return pref[(Math.random() * pref.length) | 0]; }
+function randomHero(i) { const pref = [['blaze', 'zip', 'volt', 'nova'], ['bulwark', 'nova', 'volt', 'blaze', 'bumper'], ['atlas', 'bulwark', 'bumper']][i]; return pref[(Math.random() * pref.length) | 0]; }
 $('lobby').addEventListener('click', lobbyClick);
 $('heroPick').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); lobbyClick(e); } });
 $('fillBtn').onclick = () => { if (NET.room) { if (NET.role === 'host' && NET.lobby && NET.lobby.phase === 'lobby') { NET.lobby.slots.forEach(t => t.forEach((s, i) => { if (s.type === 'empty') t[i] = { type: 'bot', hero: randomHero(i), diff: LOBBY.diff }; })); netBroadcastLobby(); } return; } LOBBY.teams.forEach(t => t.forEach((s, i) => { if (s.type === 'empty') t[i] = { type: 'bot', hero: randomHero(i), diff: LOBBY.diff }; })); renderLobby(); };
@@ -3289,6 +3402,7 @@ function clearMatch() {
   APP.models.forEach(m => scene.remove(m.g)); APP.models = [];
   for (const [, m] of projMeshes) scene.remove(m); projMeshes.clear();
   for (const [, m] of segMeshes) scene.remove(m); segMeshes.clear();
+  for (const [, m] of bumperMeshes) scene.remove(m); bumperMeshes.clear();
   for (const [, m] of itemMeshes) scene.remove(m); itemMeshes.clear();
   padMeshes.forEach(m => scene.remove(m.g)); padMeshes = [];
   towerMeshes.forEach(m => scene.remove(m.g)); towerMeshes = [];
@@ -3738,9 +3852,10 @@ function netSnapshot(sim) {
       p.atk ? [p.atk.type, r(p.atk.t), p.atk.combo | 0, p.atk.dash ? r(p.atk.dash.dur) : 0, r(p.atk.activeEnd || 0), r(p.atk.end || 0), r(p.atk.charge || 0), p.atk.aerial ? 1 : 0, p.atk.dash ? r(p.atk.dash.top) : 0, p.atk.dash && p.atk.dash.air ? 1 : 0, r(p.atk.fx), r(p.atk.fz), p.atk.dashDone ? 1 : 0] : 0,
       p.charge ? [p.charge.type, r(p.charge.t)] : 0, p.skill ? [p.skill.id, r(p.skill.t || 0), r(p.skill.fx || 0), r(p.skill.fz || 0), r(p.skill.dur || 0), p.skill.lockMove ? 1 : 0] : 0,
       [p.stats.goals, p.stats.assists, p.stats.kos, p.stats.deaths, p.stats.saves, p.stats.parries, p.stats.towers, Math.round(p.stats.dmg)],
-      [p.jumps | 0, r(p.comboT || 0), p.combo | 0, r(p.lockT || 0), r(p.slowT || 0), p.intangible ? 1 : 0, r(p.stamRegenT || 0)]]),
+      [p.jumps | 0, r(p.comboT || 0), p.combo | 0, r(p.lockT || 0), r(p.slowT || 0), p.intangible ? 1 : 0, r(p.stamRegenT || 0), r(p.suitT || 0)]]),
     pr: sim.projs.map(q => [q.id, q.type, q.team, r(q.x), r(q.y), r(q.z), r(q.vx), r(q.vy), r(q.vz)]),
     ds: sim.dynSegs.map(s => [s.id, r(s.ax), r(s.az), r(s.bx), r(s.bz), r(s.life), s.team, r(s.maxY)]),
+    bm: sim.bumpers.map(q => [q.id, q.team, r(q.x), r(q.z), r(q.life), q.owner]),
     it: sim.items.map(i => [i.id, i.type, r(i.x), r(i.y), r(i.z), r(i.gy), i.landed ? 1 : 0, r(i.life), i.goal ? 1 : 0]),
     pd: sim.pads.map(p => p.active ? 0 : r(p.t)),
     tw: sim.towers.map(t => [t.team, r(t.hp), t.alive ? 1 : 0, r(t.cd), r(t.aimYaw)])
@@ -3765,12 +3880,13 @@ function netApply(sim, s) {
     p.charge = a[25] ? { type: a[25][0], t: a[25][1] } : null;
     p.skill = a[26] ? { id: a[26][0], t: a[26][1], fx: a[26][2], fz: a[26][3], dur: a[26][4], lockMove: !!a[26][5], hit: new Set(), hitT: new Set(), ball: true, fired: true, hop: a[26][0] === 'uppercut' && a[26][1] >= 0.24, nextHit: 99, n: 5 } : null;
     const st = a[27]; Object.assign(p.stats, { goals: st[0], assists: st[1], kos: st[2], deaths: st[3], saves: st[4], parries: st[5], towers: st[6], dmg: st[7] });
-    if (a[28]) { p.jumps = a[28][0]; p.comboT = a[28][1]; p.combo = a[28][2]; p.lockT = a[28][3]; p.slowT = a[28][4]; p.intangible = !!a[28][5]; p.stamRegenT = a[28][6]; }
+    if (a[28]) { p.jumps = a[28][0]; p.comboT = a[28][1]; p.combo = a[28][2]; p.lockT = a[28][3]; p.slowT = a[28][4]; p.intangible = !!a[28][5]; p.stamRegenT = a[28][6]; p.suitT = a[28][7] || 0; }
     if (i !== APP.meId) p.anim.walk += Math.hypot(p.vx, p.vz) * dt * 1.6;
     if (!wasGrounded && p.grounded) p.anim.land = 0.15;
   });
   sim.projs = s.pr.map(a => ({ id: a[0], type: a[1], team: a[2], x: a[3], y: a[4], z: a[5], vx: a[6], vy: a[7], vz: a[8], r: a[1] === 'wave' ? 2.3 : 0.4, life: 1, hit: new Set() }));
   sim.dynSegs = s.ds.map(a => { const dx = a[3] - a[1], dz = a[4] - a[2]; return { id: a[0], ax: a[1], az: a[2], bx: a[3], bz: a[4], dx, dz, L: Math.hypot(dx, dz), minY: 0, maxY: a[7], kind: 'barrier', life: a[5], team: a[6] }; });
+  sim.bumpers = (s.bm || []).map(a => ({ id: a[0], team: a[1], x: a[2], z: a[3], life: a[4], owner: a[5], r: 0.85, h: 1.7, cool: {}, ballT: 0 }));
   sim.items = s.it.map(a => ({ id: a[0], type: a[1], x: a[2], y: a[3], z: a[4], gy: a[5], landed: !!a[6], life: a[7], goal: !!a[8], vy: 0 }));
   s.pd.forEach((t, i) => { const pd = sim.pads[i]; if (pd) { pd.active = !t; pd.t = t; } });
   let towerTeams = false;
@@ -3792,10 +3908,10 @@ function netHostFrame(dt) {
 const NET_DUMMY_BALL = { x: 1e4, y: -1e3, z: 1e4, vx: 0, vy: 0, vz: 0, px: 1e4, py: -1e3, pz: 1e4, team: -1, lastTouch: -1, touches: [], grav: null };
 function netPredict(sim, p, inp, live) {
   if (!p.alive || sim.phase === 'halftime' || sim.phase === 'end') return [];
-  const keep = { players: sim.players, ball: sim.ball, towers: sim.towers, projs: sim.projs, effects: sim.effects, items: sim.items, dynSegs: sim.dynSegs, bonus: sim.bonus };
+  const keep = { players: sim.players, ball: sim.ball, towers: sim.towers, projs: sim.projs, effects: sim.effects, items: sim.items, dynSegs: sim.dynSegs, bonus: sim.bonus, bumpers: sim.bumpers };
   const evLen = sim.events.length;
   const towerSolids = sim.towers.map(t => Object.assign({}, t, { team: p.team }));   // solid, but never damageable here
-  sim.players = [p]; sim.ball = NET_DUMMY_BALL; sim.towers = towerSolids; sim.projs = []; sim.effects = []; sim.items = []; sim.dynSegs = keep.dynSegs.slice(); sim.bonus = keep.bonus.map(b => b.slice());
+  sim.players = [p]; sim.ball = NET_DUMMY_BALL; sim.towers = towerSolids; sim.projs = []; sim.effects = []; sim.items = []; sim.dynSegs = keep.dynSegs.slice(); sim.bonus = keep.bonus.map(b => b.slice()); sim.bumpers = [];
   let out = [];
   try {
     const dt = STEP, frozen = sim.phase === 'countdown';
@@ -4171,6 +4287,8 @@ function handleEvents(sim) {
         burst(e.x, e.y, e.z, 2 + Math.min(5, e.power / 6 | 0), '#ffffff', 5, 0.18, 0.35, 4, 'star'); burst(e.x, e.y - 0.3, e.z, 2, '#ffffff', 2, 0.2, 0.45, 0, 'puff');
         break; }
       case 'block': burst(e.x, e.y, e.z, 6, '#bff0ff', 5, 0.12, 0.3); SFX.block(); break;
+      case 'bump': { const bm = bumperMeshes.get(e.bid); if (bm) bm.userData.squash = 1; burst(e.x, e.y, e.z, 10, ['#ffffff', '#ff4d6d', '#ffe14d'], 7, 0.16, 0.35, 0, 'star'); SFX.boing(e.ball ? 4 : 0); if (e.id === APP.meId) { CAM.shake = 0.35; rumble(0.5, 0.4, 120); } break; }
+      case 'reflect': { const m = APP.models[e.id]; if (m) m.flash = 0.12; impactFx(e.x, e.y, e.z, '#ffffff', 2.2); burst(e.x, e.y, e.z, 12, ['#ffffff', '#ff4d6d', '#ffe14d'], 8, 0.18, 0.4, 0, 'star'); SFX.boing(8); if (e.id === APP.meId || e.by === APP.meId) rumble(0.4, 0.3, 100); if (e.id === APP.meId && !e.ball) dmgNumber(e.x, e.y + 1, e.z, 'BOING!', '#ffe14d'); break; }
       case 'shieldBreak': impactFx(e.x, e.y, e.z, '#bff0ff', 4); burst(e.x, e.y, e.z, 10, '#bff0ff', 7, 0.2, 0.5, 8, 'star'); if (e.id === APP.meId) rumble(0.9, 0.6, 300); burst(e.x, e.y, e.z, 30, ['#bff0ff', '#ffffff', '#7fd3ff'], 9, 0.2, 0.7); SFX.shatter(); feed(`${nameOf(e.id)}'s shield broke: stunned 3s`); if (e.id === APP.meId) dmgNumber(e.x, e.y + 1.2, e.z, 'SHIELD BROKE', '#bff0ff'); break;
       case 'ballHit': {
         const sp = e.super ? ['#fff27a', '#ff5d8f', '#ffffff'] : ['#ffffff', '#fff27a'];
@@ -4193,7 +4311,7 @@ function handleEvents(sim) {
       case 'heal': if (p) burst(p.x, p.y + 1.2, p.z, 8, '#7be36b', 2.5, 0.24, 0.9, -2.5, 'plus'); break;
       case 'beam': beamFx(e); SFX.beam(); CAM.shake = Math.max(CAM.shake, 0.4); break;
       case 'projEnd': burst(e.x, e.y, e.z, e.kind === 'tshot' ? 16 : 8, e.kind === 'wave' ? '#ff8fd0' : e.kind === 'tshot' ? [FB.TEAM_COLORS[e.team], '#ffffff'] : '#fff27a', 5, 0.16, 0.35); break;
-      case 'skill': if (p && e.skill === 'uppercut') pillarFx(p.x, p.z, 0xff7a1a, 6, 0.55, 1.3); if (p && e.skill === 'slam') burst(p.x, 0.2, p.z, 8, '#f4f0e6', 4, 0.25, 0.5, 0, 'puff'); if (p && e.skill === 'blink') burst(p.x, p.y + 1, p.z, 6, '#d8ffd0', 3, 0.3, 0.45, 0, 'puff'); if (p && e.skill === 'grav') ringFx(p.x, p.z, 0x9b7bff, 14, 0.6, 0.3); if (p && e.skill === 'blink') burst(p.x, p.y + 1, p.z, 14, '#7be36b', 4, 0.15, 0.4, 0); if (p && e.skill === 'barrier') SFX.tone(300, 0.3, 'triangle', 0.2, 600); break;
+      case 'skill': if (p && e.skill === 'uppercut') pillarFx(p.x, p.z, 0xff7a1a, 6, 0.55, 1.3); if (p && e.skill === 'slam') burst(p.x, 0.2, p.z, 8, '#f4f0e6', 4, 0.25, 0.5, 0, 'puff'); if (p && e.skill === 'blink') burst(p.x, p.y + 1, p.z, 6, '#d8ffd0', 3, 0.3, 0.45, 0, 'puff'); if (p && e.skill === 'grav') ringFx(p.x, p.z, 0x9b7bff, 14, 0.6, 0.3); if (p && e.skill === 'blink') burst(p.x, p.y + 1, p.z, 14, '#7be36b', 4, 0.15, 0.4, 0); if (p && e.skill === 'barrier') SFX.tone(300, 0.3, 'triangle', 0.2, 600); if (p && e.skill === 'bumpers') SFX.boing(2); if (p && e.skill === 'suit') { SFX.tone(200, 0.4, 'sine', 0.3, 520); ringFx(p.x, p.z, 0xff4d6d, 4, 0.4, 1); if (e.id === APP.meId) feed('Bumper Suit on: 15s'); } break;
       case 'save': ANN.say(Math.random() < 0.5 ? 'What a save!' : `Save by ${sayName(e.id)}!`, 2); announce('SAVE!', e.shooter >= 0 ? `${nameOf(e.id)} stops ${nameOf(e.shooter)}'s shot` : `${nameOf(e.id)} with the save`, '#7fd3ff'); feed(`${nameOf(e.id)} with the save!`); if (e.x !== undefined) impactFx(e.x, e.y, e.z, '#7fd3ff', 4); break;
       case 'parry':
         burst(e.x, e.y, e.z, 36, ['#ffd23f', '#ffffff', '#fff27a'], 10, 0.22, 0.7); ringFx(e.x, e.z, 0xffd23f, 4, 0.35, e.y); impactFx(e.x, e.y, e.z, '#ffd23f', 6); shockFx(e.x, e.y, e.z, 0xffd23f, 5, 0.35);
@@ -4392,6 +4510,11 @@ function poseHero(m, p, dt, a, t) {
     if (fistTrail) { fistTrail.getWorldPosition(_pw); trailPush('f' + p.id, _pw.x, _pw.y, _pw.z, p.atk && p.atk.charge > 0.7 ? '#ff5d8f' : '#ffffff', 0.2 * s, 0.13); }
   }
   m.stars.visible = p.dizzyT > 0; if (m.stars.visible) m.stars.rotation.y = t * 6;
+  if (E.suit) {
+    const on = p.suitT > 0; E.suit.visible = on;
+    if (on) { const k = 1 + Math.sin(t * 7) * 0.04 + (m.flash > 0 ? 0.1 : 0); E.suit.scale.set(k, 2 - k, k); E.suitMesh.material.opacity = p.suitT < 2 ? 0.32 * (0.5 + 0.5 * Math.sin(t * 20)) : 0.32; E.suit.rotation.y = t * 0.8; }
+    if (E.coil) E.coil.scale.y = 1 + Math.sin(t * 9) * 0.15;
+  }
   m.bubble.visible = p.shielding;
   if (p.shielding) {
     const f = p.shieldHp / p.maxShield, par = APP.sim && APP.sim.time - p.shieldUpT <= 0.22, u = m.bubble.material.uniforms;
@@ -4460,6 +4583,7 @@ function frame(now) {
     if (bs > 12 && !APP.paused && bp.team >= 0) { const tc = FB.TEAM_COLORS[bp.team]; burst(bx, by, bz, 1 + Math.round(bp.k * 3), [tc, '#ffffff'], 1.5, 0.3 + 0.35 * bp.k, 0.3 + 0.2 * bp.k, 0); }
     gravFx.visible = b.grav != null; if (gravFx.visible) { gravFx.position.set(bx, by, bz); gravFx.rotation.x = t * 3; gravFx.rotation.y = t * 4; if (!APP.paused) for (let i = 0; i < 3; i++) { const a2 = Math.random() * 6.28, r = 3 + Math.random() * 1.5; PS.glow.add({ x: bx + Math.cos(a2) * r, y: by + (Math.random() - 0.5) * 2, z: bz + Math.sin(a2) * r, vx: -Math.cos(a2) * r * 3.5 - Math.sin(a2) * 6, vy: 0, vz: -Math.sin(a2) * r * 3.5 + Math.cos(a2) * 6, life: 0.28, max: 0.28, size: 0.4, c: rgbOf('#c9b5ff'), g: 0, rot: 0, vr: 0 }); } }
     syncProjectiles(sim);
+    syncBumpers(sim, APP.paused ? 0 : dt);
     syncItems(sim, t);
     syncPads(sim, t);
     syncTowers(sim, t, APP.paused ? 0 : dt);
