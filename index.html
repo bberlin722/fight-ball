@@ -2377,7 +2377,7 @@ function buildHero(heroId, team, isMe, slot) {
     const cap = new THREE.Mesh(new THREE.SphereGeometry(0.46 * s, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.42), acc); cap.position.set(0.03 * s, Y(1.8), 0); add(cap, 1.04);
     const coil = new THREE.Group(); coil.position.set(0, Y(2.2), 0); body.add(coil);
     for (let i = 0; i < 4; i++) { const c = mesh(new THREE.TorusGeometry(0.12 * s, 0.03 * s, 6, 16), metal, 0, i * 0.08 * s, 0); c.rotation.x = Math.PI / 2; coil.add(c); }
-    const knob = mesh(SPH, M('#ff4d6d'), 0, 0.4 * s, 0, 0.13 * s); outline(knob, 1.15); coil.add(knob); ex.coil = coil;
+    const knob = mesh(SPH, M('#ff4d6d'), 0, 0.4 * s, 0, 0.13 * s); outline(knob, 1.15); coil.add(knob); ex.spring = coil;
     const belly = add(mesh(new THREE.TorusGeometry(0.5 * s, 0.09 * s, 10, 28), M('#ff4d6d'), 0, Y(0.95), 0), 1.08); belly.rotation.x = Math.PI / 2;
     const suit = new THREE.Group(); suit.position.y = 1.0 * s; suit.visible = false; g.add(suit);
     const sm = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 20), new THREE.MeshBasicMaterial({ color: tc, transparent: true, opacity: 0.32, depthWrite: false }));
@@ -4513,7 +4513,7 @@ function poseHero(m, p, dt, a, t) {
   if (E.suit) {
     const on = p.suitT > 0; E.suit.visible = on;
     if (on) { const k = 1 + Math.sin(t * 7) * 0.04 + (m.flash > 0 ? 0.1 : 0); E.suit.scale.set(k, 2 - k, k); E.suitMesh.material.opacity = p.suitT < 2 ? 0.32 * (0.5 + 0.5 * Math.sin(t * 20)) : 0.32; E.suit.rotation.y = t * 0.8; }
-    if (E.coil) E.coil.scale.y = 1 + Math.sin(t * 9) * 0.15;
+    if (E.spring) E.spring.scale.y = 1 + Math.sin(t * 9) * 0.15;
   }
   m.bubble.visible = p.shielding;
   if (p.shielding) {
@@ -4568,7 +4568,8 @@ function frame(now) {
     const a = NET.inMatch && NET.role === 'client' ? netAlpha() : APP.paused ? 1 : APP.acc / STEP;
     const netClient = NET.inMatch && NET.role === 'client';
     sim.players.forEach((p, i) => {
-      poseHero(APP.models[i], p, APP.paused ? 0 : dt, netClient ? netAlphaFor(i) : a, t);
+      try { poseHero(APP.models[i], p, APP.paused ? 0 : dt, netClient ? netAlphaFor(i) : a, t); }
+      catch (e) { if (!APP.poseErr) { APP.poseErr = true; console.error('hero animation failed', p.heroId, e); } }
       if (netClient && i === APP.meId) APP.models[i].g.position.add(NET.err);
     });
     const b = sim.ball;
