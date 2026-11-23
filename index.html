@@ -3348,7 +3348,7 @@ const NET = {
 const NET_APP_ID = 'fightball-online-v2';
 const NET_SNAP_HZ = 30, NET_INPUT_HZ = 60;
 const NET_BITS = ['jump', 'sprint', 'punch', 'kick', 's1', 's2', 'shield'];
-const NET_URLS = ['https://esm.sh/trystero/mqtt', 'https://esm.sh/trystero/nostr'];
+const NET_URLS = ['https://esm.sh/trystero@0.21.5/mqtt', 'https://esm.sh/trystero@0.21.5/nostr', 'https://cdn.jsdelivr.net/npm/trystero@0.21.5/+esm'];
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 function netPackInput(i) {
@@ -3398,7 +3398,7 @@ async function netLoad() {
   for (const u of NET_URLS) {
     try {
       const m = await import(u);
-      if (m && typeof m.joinRoom === 'function') { NET.mod = m; NET.strategy = u.split('/').pop(); return m; }
+      if (m && typeof m.joinRoom === 'function') { NET.mod = m; NET.strategy = u.includes('jsdelivr') ? 'nostr' : u.split('/').pop(); return m; }
     } catch (e) { err = e; }
   }
   throw err || new Error('Trystero could not be loaded');
