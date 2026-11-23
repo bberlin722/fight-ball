@@ -339,7 +339,7 @@ const BALL_VY_MAX = 14;
 const PARRY_WINDOW = 0.22, REGEN_DELAY = 5, REGEN_RATE = 0.007, BUFF_TIME = 30;
 const SHIELD_DRAIN = 22, SHIELD_REGEN = 18, SHIELD_STUN = 3;
 const BALL_NEUTRAL_SPEED = 8, BALL_HURT_SPEED = 10;
-const TOWER_HP = 500, TOWER_R = 1.5, TOWER_H = 6.2, TOWER_RANGE = 13, TOWER_CD = 10, TOWER_REGEN = 5, TOWER_SHOT_SPEED = 42;
+const TOWER_HP = 500, TOWER_R = 1.5, TOWER_H = 6.2, TOWER_RANGE = 13, TOWER_CD = 10, TOWER_SHOT_SPEED = 42;
 const BONUS_KINDS = ['atk', 'speed', 'stamina', 'def', 'shield'];
 FB.BONUS_NAMES = { atk: 'Attack +25%', speed: 'Speed +12%', stamina: 'Stamina +40%', def: 'Defense +25%', shield: 'Shield +50%' };
 const GOAL_PACK_T = 120, RESPAWN_T = 45, ASSIST_WINDOW = 15, BOX_DEPTH = 13, BOX_HALF_W = 13;   // saves only inside the penalty box drawn in front of each goal
@@ -1124,7 +1124,6 @@ class Sim {
     const b = this.ball;
     for (const tw of this.towers) {
       if (!tw.alive) continue;
-      if (tw.hp < tw.maxHp && tw.hp > tw.maxHp * 0.5 && this.time - tw.lastDmgT > 5) tw.hp = Math.min(tw.maxHp, tw.hp + TOWER_REGEN * dt);
       tw.cd = Math.max(0, tw.cd - dt);
       const dx = b.x - tw.x, dz = b.z - tw.z, d = Math.hypot(dx, dz);
       if (d > TOWER_RANGE) continue;
