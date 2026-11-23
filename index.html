@@ -3493,7 +3493,7 @@ function netReplaceWithBot(peer, why) {
   APP.ctrls[idx] = new FB.BotBrain(APP.sim, idx, 'normal');
   delete NET.ctrlByPeer[peer];
   const L = NET.lobby;
-  if (L) { const r = APP.roster[idx]; L.slots[r.team][r.slot] = { type: 'bot', hero: r.hero, diff: 'normal' }; L.roster = APP.roster; }
+  if (L) { const r = APP.roster[idx]; L.slots[r.team][r.slot] = { type: 'bot', hero: r.hero, diff: 'normal', was: peer }; L.roster = APP.roster; }
   feed(`${esc(nm)} ${why}: a bot took over`);
   if (NET.act.roster) NET.act.roster.send({ roster: APP.roster });
   netApplyRoster(APP.roster);
@@ -3655,9 +3655,22 @@ function netBeginMatch(roster, halfLen) {
   $('rematchBtn').disabled = !host; $('rematchBtn').textContent = host ? 'Rematch' : 'Waiting for host';
   netStatus(`Room <b>${NET.code}</b> &middot; match in progress`);
 }
+function netRestoreSlots(L) {
+  for (let t = 0; t < 2; t++) for (let i = 0; i < 3; i++) {
+    const s = L.slots[t][i];
+    if (s.type !== 'bot' || !s.was) continue;
+    const peer = s.was; delete s.was;
+    if ((peer in L.players) && !netSlotOf(peer)) L.slots[t][i] = { type: 'human', peer, name: L.players[peer] || 'Player', hero: s.hero };
+  }
+}
 function netQuitMatch() {
-  if (NET.role === 'host') { if (NET.lobby) { NET.lobby.phase = 'lobby'; delete NET.lobby.roster; } NET.inMatch = false; toLobby(); netBroadcastLobby(); }
-  else { if (NET.act.req) NET.act.req.send({ t: 'leaveMatch' }); NET.inMatch = false; toLobby(); }
+  if (NET.role === 'host') { if (NET.lobby) { NET.lobby.phase = 'lobby'; delete NET.lobby.roster; netRestoreSlots(NET.lobby); } NET.inMatch = false; toLobby(); netBroadcastLobby(); }
+  else {
+    const over = APP.sim && APP.sim.phase === 'end';
+    if (!over && NET.act.req) NET.act.req.send({ t: 'leaveMatch' });
+    NET.inMatch = false; toLobby();
+    if (over) netStatus(`Room <b>${NET.code}</b> &middot; back in the lobby. Your slot is kept; pick a hero once the host returns to the lobby.`);
+  }
 }
 
 /* ---------- message handling ---------- */
@@ -3682,8 +3695,14 @@ function netOn(kind, d, peer) {
     if (host) return;
     const wasMatch = NET.lobby && NET.lobby.phase === 'match';
     NET.lobby = d;
+    const ph = NET.pendHero;
+    if (ph) {
+      const mine = netSlotOf(NET.selfId), ms = mine && d.slots[mine[0]][mine[1]];
+      if (!ms || ms.hero === ph.hero || performance.now() > ph.until) NET.pendHero = null;
+      else ms.hero = ph.hero;
+    }
     if (d.phase === 'lobby' && NET.inMatch) { NET.inMatch = false; toLobby(); }
-    if (!wasMatch && d.phase === 'lobby') netStatus(`Room <b>${NET.code}</b> &middot; ${Object.keys(d.players || {}).length}/6 players &middot; pick your team, slot and hero, then wait for the host to start.`);
+    if (d.phase === 'lobby' && (!wasMatch || APP.state === 'lobby')) netStatus(`Room <b>${NET.code}</b> &middot; ${Object.keys(d.players || {}).length}/6 players &middot; pick your team, slot and hero, then wait for the host to start.`);
     if (APP.state === 'lobby') renderLobby();
   } else if (kind === 'start') {
     if (host || !d || !d.roster) return;
@@ -3913,7 +3932,7 @@ function netLobbyClick(e) {
   if (slot) { NET.sel = [+slot.dataset.t, +slot.dataset.i]; renderLobby(); return; }
   if (hp && L.phase === 'lobby') {
     const s = L.slots[NET.sel[0]][NET.sel[1]];
-    if (s.type === 'human' && s.peer === NET.selfId) { if (host) netHostApply(NET.selfId, { t: 'hero', hero: hp.dataset.h }); else { s.hero = hp.dataset.h; renderLobby(); NET.act.req.send({ t: 'hero', hero: hp.dataset.h }); } }
+    if (s.type === 'human' && s.peer === NET.selfId) { if (host) netHostApply(NET.selfId, { t: 'hero', hero: hp.dataset.h }); else { s.hero = hp.dataset.h; NET.pendHero = { hero: hp.dataset.h, until: performance.now() + 2000 }; renderLobby(); NET.act.req.send({ t: 'hero', hero: hp.dataset.h }); } }
     else if (host && s.type === 'bot') { s.hero = hp.dataset.h; netBroadcastLobby(); }
   }
 }
