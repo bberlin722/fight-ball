@@ -61,7 +61,7 @@ button:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .you{background:var(--yel);border:2px solid var(--ink);border-radius:6px;padding:0 6px;font:900 11px Nunito;color:var(--ink)}
 .acts{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .acts button{padding:4px 10px;min-height:34px;font-size:13px;border-width:2px;box-shadow:0 3px 0 var(--ink);border-radius:9px}
-.hero-pick{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.hero-pick{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:12px}
 .hp{border:3px solid var(--ink);border-radius:12px;padding:6px 2px 4px;text-align:center;background:#fff;cursor:pointer;font:900 12px Nunito}
 .hp .av{width:42px;height:42px;margin:0 auto 4px}
 .hp .av::after{top:12px;right:5px;width:10px;height:10px;box-shadow:-11px 0 0 -2px #fff,-11px 0 0 0 var(--ink)}
@@ -336,17 +336,20 @@ const HL = 44, HW = 27, CH = 9, GW = 6.5, GH = 5.5, GD = 5, WALL_H = 7.5;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const BALL_R = 1.35, G = 26, BALL_G = 34, BALL_MASS = 3.2, CEIL = 9;
 const BALL_VY_MAX = 14, BALL_VY_KICK = 17;   // kicks may launch higher than bumps and punches
+const BUMPER_SUIT_T = 3, BUBBLE_R = 2.0, BUBBLE_LIFE = 7, ROCKET_BLAST = 3.2;
 const BUMPER_LIFE = 10, BUMPER_R = 0.85, BUMPER_H = 1.7, BUMPER_KB = 17, BUMPER_DMG = 5, BUMPER_E = 1.25, BUMPER_BALL_MIN = 13, SUIT_TIME = 15;
+const BARRIER_H = 2.8;   // ~40% of the 7.5 m ceiling: low enough that every hero can double jump over it
+const WALL_PIN_MIN = 7, WALL_PIN_RANGE = 10, WALL_PIN_MAX = 0.55, WALL_PIN_WINDOW = 0.8, WALL_BALL_BOOST = 1.45;   // wall slams: knocked into an arena wall by an enemy
 const CHARGE_FULL_T = 0.72, CHARGE_MIN = 0.25;   // the meter fills evenly from 25% (instant tap) to 100% at 0.72 s
 const CHARGE_HOLD = 2.0, LOB_DIP = 0.9, RAMP_LAUNCH_MIN = 12, RAMP_LIFT = 0.55;   // longest you can hold a charge; extra gravity on the way down for a power lob
 const KICK_FULL = 0.97, TOWER_BALL_DMG = 2.6, TOWER_BALL_MIN = 10;
-const PARRY_WINDOW = 0.22, REGEN_DELAY = 5, REGEN_RATE = 0.007, BUFF_TIME = 30;
+const PARRY_WINDOW = 0.32, REGEN_DELAY = 5, REGEN_RATE = 0.007, BUFF_TIME = 30;
 const SHIELD_DRAIN = 22, SHIELD_REGEN = 18, SHIELD_STUN = 3;
 const BALL_NEUTRAL_SPEED = 8, BALL_HURT_SPEED = 10;
 const TOWER_HP = 250, TOWER_R = 1.5, TOWER_H = 6.2, TOWER_RANGE = 13, TOWER_CD = 10, TOWER_SHOT_SPEED = 42;
 const BONUS_KINDS = ['atk', 'speed', 'stamina', 'def', 'shield'];
 FB.BONUS_NAMES = { atk: 'Attack +25%', speed: 'Speed +12%', stamina: 'Stamina +40%', def: 'Defense +25%', shield: 'Shield +50%' };
-const GOAL_PACK_T = 120, RESPAWN_T = 45, ASSIST_WINDOW = 15, BOX_DEPTH = 13, BOX_HALF_W = 13;   // saves only inside the penalty box drawn in front of each goal
+const GOAL_PACK_T = 120, RESPAWN_T = 30, ASSIST_WINDOW = 15, BOX_DEPTH = 13, BOX_HALF_W = 13;   // saves only inside the penalty box drawn in front of each goal
 const PAD_SMALL = 0.3, PAD_SMALL_T = 10, PAD_BIG_T = 30;
 const ITEM_TYPES = { hp: { name: 'Health pack' }, atk: { name: 'Attack boost' }, def: { name: 'Defense boost' } };
 FB.ITEM_TYPES = ITEM_TYPES;
@@ -462,11 +465,27 @@ FB.HEROES = {
     blurb: 'Keeps the team standing and controls lanes with a wide shockwave.' },
   bumper: { name: 'Bumper', role: 'Bouncer Defender', color: '#e07a4f', accent: '#7a3220', size: 1.12,
     hp: 220, speed: 7.2, sprint: 1.5, stam: 1.0, weight: 1.45, punch: 9, kick: 12, ballPow: 1.0, reach: 0.2, shieldHp: 80, jump: 9.8,
-    s1: { id: 'bumpers', name: 'Spring Bumpers', cd: 16, desc: 'Throw out three springy bumpers for 10s. They bounce away enemies (lighter heroes fly further) and the ball.' },
-    s2: { id: 'suit', name: 'Bumper Suit', cd: 35, desc: 'Inflate a bouncy suit for 15s: takes no damage and sends every hit, and the ball, straight back at full strength.' },
-    blurb: 'Turns the space in front of goal into a pinball table. Nothing gets through his suit.' }
+    s1: { id: 'suit', name: 'Bumper Suit', cd: 9, desc: 'Pop on a bouncy suit for 3s: hits and the ball rebound off you. The harder they come in, the harder they go back.' },
+    s2: { id: 'bumpers', name: 'Spring Bumpers', cd: 18, desc: 'Lob three springy bumpers out in front. For 10s they bounce enemies (lighter heroes fly further) and the ball.' },
+    blurb: 'Turns the space in front of goal into a pinball table, and counter-punches anyone who swings at him.' },
+  bubble: { name: 'Bubble', role: 'Bubble Defender', color: '#8fd3ff', accent: '#2a7fa8', size: 1.0,
+    hp: 190, speed: 7.8, sprint: 1.5, stam: 1.1, weight: 1.15, punch: 8, kick: 12, ballPow: 1.0, reach: 0.1, shieldHp: 75, jump: 10.2,
+    s1: { id: 'bubble', name: 'Bubble Throw', cd: 10, desc: 'Throw a big floating bubble where you aim, on the ground or in the air. For 7s it bounces away enemies and the ball.' },
+    s2: { id: 'bshield', name: 'Bubble Shield', cd: 35, desc: 'Wrap yourself in a bubble for 15s: no damage, hits and the ball bounce back, and enemies who touch you get bounced away.' },
+    blurb: 'Fills lanes with bouncy bubbles and simply cannot be hurt while her shield is up.' },
+  rocket: { name: 'Rocket', role: 'Jet Attacker', color: '#dfe6ee', accent: '#e63946', size: 0.98,
+    hp: 160, speed: 8.4, sprint: 1.5, stam: 1.8, weight: 0.95, punch: 10, kick: 13, ballPow: 1.1, reach: 0.0, shieldHp: 50, jump: 10.5,
+    jet: { vy: -0.25, drain: 20, air: 9 },
+    s1: { id: 'rocket', name: 'Rocket', cd: 6, desc: 'Fire a rocket that flies about half the pitch and explodes, blasting enemies and the ball.' },
+    s2: { id: 'thrust', name: 'Jet Thrust', cd: 12, desc: 'Blast forward with the jet pack about half the pitch, slamming enemies and the ball out of the way.' },
+    blurb: 'Hold jump to hover and glide on her jet pack. Fast, explosive, hard to pin down.' },
+  spike: { name: 'Spike', role: 'All-rounder', color: '#9aa3b5', accent: '#3d4252', size: 1.05,
+    hp: 195, speed: 8.0, sprint: 1.5, stam: 1.1, weight: 1.2, punch: 11, kick: 13, ballPow: 1.0, reach: 0.15, shieldHp: 65, jump: 10,
+    s1: { id: 'grapple', name: 'Grapple Chain', cd: 8, desc: 'Fling a chain hook a quarter of the pitch. It yanks an enemy or the ball into your spikes, which hurt and knock them back.' },
+    s2: { id: 'spikes', name: 'Spike Volley', cd: 7, desc: 'Throw three spikes in a row. Light hits, but landing all three makes the third one hit much harder.' },
+    blurb: 'Covered in spikes: pulls enemies and the ball in, then sends them flying.' }
 };
-FB.HERO_ORDER = ['bulwark', 'blaze', 'volt', 'atlas', 'zip', 'nova', 'bumper'];
+FB.HERO_ORDER = ['bulwark', 'blaze', 'volt', 'atlas', 'zip', 'nova', 'bumper', 'bubble', 'rocket', 'spike'];
 FB.ROLES = ['FWD', 'DEF', 'GK'];
 FB.ROLE_NAMES = { FWD: 'Forward', DEF: 'Defender', GK: 'Goalie' };
 FB.TEAM_NAMES = ['Blue', 'Orange'];
@@ -499,6 +518,7 @@ class Sim {
     this.projs = [];
     this.dynSegs = [];
     this.bumpers = [];
+    this.bubbles = [];
     this.effects = [];
     this.score = [0, 0];
     this.half = 1;
@@ -529,7 +549,7 @@ class Sim {
       shieldHp: h.shieldHp, maxShield: h.shieldHp, baseShield: h.shieldHp, baseStam: 100 * h.stam, shielding: false, shieldBrokenT: 0, ballHitT: -9,
       alive: true, respawnT: 0, invulnT: 0, stunT: 0, lockT: 0, dizzyT: 0,
       grounded: true, jumps: 0, atk: null, charge: null, skill: null, combo: 0, comboT: 0,
-      cd1: 0, cd2: 0, suitT: 0, intangible: false, lastHitBy: -1, lastHitT: -99, slowT: 0,
+      cd1: 0, cd2: 0, suitT: 0, suitKind: null, hovering: false, pin: null, intangible: false, lastHitBy: -1, lastHitT: -99, slowT: 0,
       prev: FB.emptyInput(), anim: { walk: 0, land: 0, hitFlash: 0 },
       shieldUpT: -9, lastShieldStart: -9, lastDmgT: -9,
       stats: { goals: 0, assists: 0, kos: 0, deaths: 0, dmg: 0, saves: 0, parries: 0, items: 0, towers: 0, deflects: 0 }
@@ -604,7 +624,7 @@ class Sim {
     for (const p of this.players) { this.placePlayer(p, true); p.cd1 = 0; p.cd2 = 0; p.respawnT = 0; }
     const b = this.ball;
     b.x = b.px = 0; b.y = b.py = BALL_R + 3; b.z = b.pz = 0; b.safeX = 0; b.safeZ = 0; b.vx = b.vy = b.vz = 0; b.lastTouch = -1; b.grav = null; b.team = -1; b.ramp = null; b.dip = 0;
-    this.projs.length = 0; this.dynSegs.length = 0; this.effects.length = 0; this.bumpers.length = 0;
+    this.projs.length = 0; this.dynSegs.length = 0; this.effects.length = 0; this.bumpers.length = 0; this.bubbles.length = 0;
     for (const p of this.players) p.suitT = 0;
     if (this.items) { this.items.length = 0; this.itemT = Math.max(this.itemT, 15); }
     this.roundT = 0; this.goalPacksDone = false;
@@ -653,13 +673,31 @@ class Sim {
       this.collidePlayers();
       this.collidePlayersBall();
       if (this.bumpers.length) this.collideBumpers();
+      if (this.bubbles.length) this.collideBubbles();
+      this.collideSuits();
       for (const p of this.players) if (p.alive) this.contain(p, p.r);
       this.contain(b, BALL_R);
     }
     for (const p of this.players) if (p.alive && p.atk) this.tickAttack(p, physDt);
     this.updateProjectiles(physDt);
     this.updateEffects(physDt);
-    for (let i = this.bumpers.length - 1; i >= 0; i--) { this.bumpers[i].life -= physDt; if (this.bumpers[i].life <= 0) this.bumpers.splice(i, 1); }
+    for (let i = this.bumpers.length - 1; i >= 0; i--) {
+      const bm = this.bumpers[i]; bm.life -= physDt;
+      if (bm.fly) {
+        const f = bm.fly; f.t += physDt; const k = Math.min(1, f.t / f.T);
+        bm.x = f.sx + (f.tx - f.sx) * k; bm.z = f.sz + (f.tz - f.sz) * k; bm.y = 1.4 * (1 - k) + 10 * k * (1 - k);
+        if (k >= 1) { bm.fly = null; bm.y = 0; this.emit({ type: 'bumperLand', bid: bm.id, x: bm.x, z: bm.z }); }
+      }
+      if (bm.life <= 0) this.bumpers.splice(i, 1);
+    }
+    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+      const bu = this.bubbles[i]; bu.life -= physDt;
+      if (bu.moveT > 0) {
+        bu.moveT -= physDt; bu.x += bu.vx * physDt; bu.z += bu.vz * physDt;
+        if (Math.abs(bu.x) > HL - bu.r || Math.abs(bu.z) > HW - bu.r || !this.insideArena(bu.x, bu.z)) { bu.x -= bu.vx * physDt; bu.z -= bu.vz * physDt; bu.moveT = 0; }
+      }
+      if (bu.life <= 0) { this.emit({ type: 'bubblePop', x: bu.x, y: bu.y, z: bu.z }); this.bubbles.splice(i, 1); }
+    }
     if (!frozen) { this.updateItems(physDt); this.updatePads(physDt); this.updateTowers(physDt); if (this.phase === 'play') this.roundT += physDt; }
 
     if (this.phase === 'play') {
@@ -735,7 +773,7 @@ class Sim {
     const skillMove = (p.skill && p.skill.lockMove) || this.atkDashing(p);
     if (!(p.stunT > 0) && !skillMove) {
       const tx = mx * speed, tz = mz * speed;
-      const acc = Math.min(1, (p.grounded ? 14 : 5) * dt);
+      const acc = Math.min(1, (p.grounded ? 14 : p.hovering && H.jet ? H.jet.air : 5) * dt);
       p.vx += (tx - p.vx) * acc; p.vz += (tz - p.vz) * acc;
     } else if (p.stunT > 0 && p.grounded) {
       const f = Math.max(0, 1 - 2.5 * dt); p.vx *= f; p.vz *= f;
@@ -751,6 +789,13 @@ class Sim {
     if (pressed('jump') && !(p.stunT > 0) && !skillMove && !p.shielding && !frozen) {
       if (p.grounded) { p.vy = H.jump; p.jumps = 1; p.grounded = false; this.emit({ type: 'jump', id: p.id }); }
       else if (p.jumps < 2) { p.vy = H.jump * 0.9; p.jumps = 2; this.emit({ type: 'djump', id: p.id, x: p.x, y: p.y, z: p.z }); }
+    }
+
+    // jet pack (Rocket): hold jump in the air to hover and glide; uses stamina. Double jump still works with a second tap.
+    p.hovering = false;
+    if (H.jet && inp.jump && !p.grounded && !pressed('jump') && !(p.stunT > 0) && !skillMove && !frozen && p.stamina > 1 && p.vy < 2) {
+      p.hovering = true; p.vy += G * dt + (H.jet.vy - p.vy) * Math.min(1, 6 * dt);   // cancels gravity, eases toward a slow drift
+      p.stamina = Math.max(0, p.stamina - H.jet.drain * dt); p.stamRegenT = 0.8;
     }
 
     // attacks with charge (fire on release)
@@ -874,7 +919,7 @@ class Sim {
 
   hitBall(p, fx, fz, elev, pow, keep, vyMax) {
     const b = this.ball, pre = [b.x, b.y, b.z, b.vx, b.vy, b.vz];
-    b.dip = 0;
+    b.dip = 0; b.wallBoosted = false;
     if (p) { pow *= this.mods(p.team).atk > 1 ? 1.1 : 1; b.team = p.team; }
     const ce = Math.cos(elev), se = Math.sin(elev);
     b.vx = b.vx * keep + fx * ce * pow;
@@ -892,7 +937,7 @@ class Sim {
     const n = Math.hypot(dx, dz) || 1; dx /= n; dz /= n;
     if (q.suitT > 0 && att && att.team !== q.team) {   // Bumper Suit: no damage, the hit goes straight back
       this.emit({ type: 'reflect', id: q.id, by: att.id, x: q.x + dx * -0.6, y: q.y + q.height * 0.6, z: q.z + dz * -0.6 });
-      if (kind !== 'reflect' && kind !== 'bumper' && att.alive) this.hitPlayer(q, att, dmg, kb, -dx, -dz, Math.max(lift, 0.25), 'reflect');
+      if (kind !== 'reflect' && kind !== 'bumper' && kind !== 'bubble' && att.alive) this.hitPlayer(q, att, dmg, kb * (0.6 + 0.4 * q.hero.weight), -dx, -dz, Math.max(lift, 0.25), 'reflect');
       return false;
     }
     dmg *= this.mods(att.team).atk; const dm = this.mods(q.team).def; dmg *= dm; kb *= dm < 1 ? 0.85 : 1;
@@ -915,6 +960,7 @@ class Sim {
     q.hp -= dmg; q.lastDmgT = this.time;
     att.stats.dmg += dmg;
     q.lastHitBy = att.id; q.lastHitT = this.time;
+    if (att.team !== q.team) q.pin = { x: q.x, z: q.z, t: this.time, by: att.id, kind };
     const scale = (1 + 1.4 * (1 - Math.max(0, q.hp) / q.maxHp)) / q.hero.weight;
     const v = kb * scale;
     q.vx = dx * v; q.vz = dz * v;
@@ -948,7 +994,7 @@ class Sim {
     const fx = Math.cos(aim), fz = Math.sin(aim);
     this.emit({ type: 'skill', id: p.id, skill: id });
     switch (id) {
-      case 'bash': p.skill = { id, t: 0, dur: 0.35, fx, fz, hit: new Set(), ball: false, lockMove: true, armor: true }; break;
+      case 'bash': p.skill = { id, t: 0, dur: 0.6, fx, fz, hit: new Set(), ball: false, lockMove: true, armor: true, shoulder: false }; break;
       case 'slam': p.vy = 11; p.grounded = false; p.skill = { id, t: 0, dur: 1.6, fx, fz, lockMove: true, armor: true }; break;
       case 'flurry': p.skill = { id, t: 0, dur: 0.6, fx, fz, nextHit: 0.05, n: 0, lockMove: true }; break;
       case 'uppercut': p.skill = { id, t: 0, dur: 0.42, fx, fz, hit: new Set(), ball: false, lockMove: true, armor: true }; break;
@@ -958,21 +1004,46 @@ class Sim {
         p.lockT = 0.18; break;
       case 'rail': p.skill = { id, t: 0, dur: 0.75, fx, fz, fired: false, lockMove: true }; break;
       case 'barrier': {
-        const cx = p.x + fx * 2.8, cz = p.z + fz * 2.8, px = -fz, pz = fx, hl = 3.6;
-        const s = seg(cx - px * hl, cz - pz * hl, cx + px * hl, cz + pz * hl, 0, 4.2, 'barrier');
-        s.life = 4.5; s.team = p.team; s.id = this.nextId++;
-        this.dynSegs.push(s); p.lockT = 0.25; break;
+        // curved glass shield (5 segments on an arc, bulging forward), 3 m tall so a double jump clears it; surges ~5.4 m forward, then holds
+        const R = 5, C0x = p.x + fx * (2.4 - R), C0z = p.z + fz * (2.4 - R), N = 5, span = 0.75;
+        const grp = { owner: p.id, hit: new Set(), ball: false, moveT: 0.45, vx: fx * 12, vz: fz * 12, fx, fz };
+        let prev = null;
+        for (let k = 0; k <= N; k++) {
+          const a = aim + span * (k / N * 2 - 1), x = C0x + Math.cos(a) * R, z = C0z + Math.sin(a) * R;
+          if (prev) { const sg = seg(prev[0], prev[1], x, z, 0, BARRIER_H, 'barrier'); sg.life = 4.5; sg.team = p.team; sg.id = this.nextId++; sg.grp = grp; this.dynSegs.push(sg); }
+          prev = [x, z];
+        }
+        p.lockT = 0.25; break;
       }
       case 'bumpers': {
         for (let i = this.bumpers.length - 1; i >= 0; i--) if (this.bumpers[i].owner === p.id) this.bumpers.splice(i, 1);
         const px = -fz, pz = fx;
-        for (const [fwd, lat] of [[4.2, 0], [3.1, 2.7], [3.1, -2.7]]) {
+        // lobbed out further in an arc; they only start bouncing things once they land
+        for (const [fwd, lat] of [[7.5, 0], [6.3, 3.2], [6.3, -3.2]]) {
           const x = clamp(p.x + fx * fwd + px * lat, -HL + 1.2, HL - 1.2), z = clamp(p.z + fz * fwd + pz * lat, -HW + 1.2, HW - 1.2);
-          this.bumpers.push({ id: this.nextId++, owner: p.id, team: p.team, x, z, r: BUMPER_R, h: BUMPER_H, life: BUMPER_LIFE, cool: {}, ballT: 0 });
+          this.bumpers.push({ id: this.nextId++, owner: p.id, team: p.team, x: p.x, z: p.z, y: 1.4, r: BUMPER_R, h: BUMPER_H, life: BUMPER_LIFE + 0.5, cool: {}, ballT: 0,
+            fly: { sx: p.x + fx * 0.6, sz: p.z + fz * 0.6, tx: x, tz: z, t: 0, T: 0.5 } });
         }
+        p.lockT = 0.3; break;
+      }
+      case 'suit': p.suitT = BUMPER_SUIT_T; p.suitKind = 'bumper'; p.lockT = 0.12; break;
+      case 'bshield': p.suitT = SUIT_TIME; p.suitKind = 'bubble'; p.lockT = 0.2; break;
+      case 'bubble': {
+        for (let i = this.bubbles.length - 1; i >= 0; i--) if (this.bubbles[i].owner === p.id) this.bubbles.splice(i, 1);
+        const y = p.grounded ? BUBBLE_R : clamp(p.y + 1.0, BUBBLE_R, WALL_H - 0.2 - BUBBLE_R);
+        this.bubbles.push({ id: this.nextId++, owner: p.id, team: p.team, x: p.x + fx * 1.6, y, z: p.z + fz * 1.6, vx: fx * 18, vz: fz * 18, moveT: 0.5, r: BUBBLE_R, life: BUBBLE_LIFE, cool: {}, ballT: 0 });
         p.lockT = 0.25; break;
       }
-      case 'suit': p.suitT = SUIT_TIME; p.lockT = 0.2; break;
+      case 'rocket':
+        this.projs.push({ id: this.nextId++, type: 'rocket', owner: p.id, team: p.team, x: p.x + fx * 0.9, y: p.y + 1.3, z: p.z + fz * 0.9,
+          vx: fx * 34, vy: 0, vz: fz * 34, r: 0.45, life: 1.3, dmg: 0, kb: 0, ballPow: 0, pierce: false, hit: new Set() });
+        p.lockT = 0.22; p.vx -= fx * 3; p.vz -= fz * 3; break;
+      case 'thrust': p.skill = { id, t: 0, dur: 1.1, fx, fz, hit: new Set(), ball: false, lockMove: true, armor: true, lx: p.x, lz: p.z }; break;
+      case 'grapple':
+        this.projs.push({ id: this.nextId++, type: 'hook', owner: p.id, team: p.team, x: p.x + fx * 0.8, y: p.y + 1.2, z: p.z + fz * 0.8,
+          vx: fx * 52, vy: 0, vz: fz * 52, r: 0.55, life: 22 / 52, dmg: 0, kb: 0, ballPow: 0, pierce: false, hit: new Set() });
+        p.lockT = 0.25; break;
+      case 'spikes': p.skill = { id, t: 0, dur: 0.48, fx, fz, n: 0, next: 0, cast: this.nextId++ }; p.spikeCombo = { cast: p.skill.cast, hits: new Set() }; break;
       case 'grav': this.effects.push({ type: 'grav', owner: p.id, t: 1.1, captured: null }); p.lockT = 0.15; break;
       case 'blink': p.skill = { id, t: 0, dur: 0.17, fx, fz, lockMove: true }; p.intangible = true; break;
       case 'cyclone': p.skill = { id, t: 0, dur: 0.55, fx, fz, hit: new Set(), ball: false, lockMove: true, armor: true }; break;
@@ -1009,27 +1080,40 @@ class Sim {
       }
     };
     switch (s.id) {
-      case 'bash':
-        p.vx = s.fx * 20; p.vz = s.fz * 20;
+      case 'bash': {
+        // charge ~13 m; enemies he runs into are shoved ahead of him (and into walls = stun); ends with a shoulder strike that sends them far
+        const sp = s.t < s.dur - 0.12 ? 23 : 12;
+        p.vx = s.fx * sp; p.vz = s.fz * sp;
         this.towersOnce(p, s, p.r + 0.9, 14);
-        sweep(p.r + 0.9, q => this.hitPlayer(p, q, 14, 14, s.fx + (q.x - p.x) * 0.2, s.fz + (q.z - p.z) * 0.2, 0.3, 'skill'));
-        if (!s.ball && ballNear(p.r + 0.7)) { s.ball = true; this.hitBall(p, s.fx, s.fz, 0.15, 16 * p.hero.ballPow, 0.2); this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow: 16 }); }
+        sweep(p.r + 0.9, q => this.hitPlayer(p, q, 8, 13, s.fx + (q.x - p.x) * 0.15, s.fz + (q.z - p.z) * 0.15, 0.1, 'bash'));
+        if (!s.ball && ballNear(p.r + 0.7)) { s.ball = true; this.hitBall(p, s.fx, s.fz, 0.15, 18 * p.hero.ballPow, 0.2); this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow: 18 }); }
+        if (!s.shoulder && s.t >= s.dur - 0.12) {
+          s.shoulder = true;
+          this.emit({ type: 'shoulder', id: p.id, x: p.x + s.fx * 1.2, y: p.y + 1.2, z: p.z + s.fz * 1.2 });
+          for (const q of this.players) {
+            if (q === p || !q.alive || q.team === p.team) continue;
+            const dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz);
+            if (d - q.r < 2.6 && Math.abs(q.y - p.y) < 2.2 && (d < 0.1 || (dx * s.fx + dz * s.fz) / d > 0.1)) this.hitPlayer(p, q, 16, 30, s.fx, s.fz, 0.45, 'bash');
+          }
+          if (ballNear(p.r + 1.6)) this.hitBall(p, s.fx, s.fz, 0.2, 26 * p.hero.ballPow, 0.1);
+        }
         if (s.t >= s.dur) { p.vx *= 0.3; p.vz *= 0.3; p.skill = null; }
         break;
+      }
       case 'slam':
         if (s.t < 1.4) { p.vx = s.fx * 5; p.vz = s.fz * 5; }
         if ((s.t > 0.2 && p.grounded) || s.t >= s.dur) {
           this.emit({ type: 'slam', id: p.id, x: p.x, z: p.z });
-          this.towersNear(p, 6.5, tw => this.damageTower(tw, 18, p));
+          this.towersNear(p, 9.5, tw => this.damageTower(tw, 18, p));
           for (const q of this.players) {
             if (q === p || !q.alive || q.team === p.team) continue;
             const d = Math.hypot(q.x - p.x, q.z - p.z);
-            if (d < 6.5 && q.y < 2.5) this.hitPlayer(p, q, 18 * (1 - d / 13), 16, q.x - p.x, q.z - p.z, 0.7, 'skill');
+            if (d < 9.5 && q.y < 2.5) this.hitPlayer(p, q, 18 * (1 - d / 19), 16, q.x - p.x, q.z - p.z, 0.7, 'skill');
           }
           const d = Math.hypot(b.x - p.x, b.z - p.z);
-          if (d < 7.5 + BALL_R) {
+          if (d < 10.5 + BALL_R) {
             const n = d || 1;
-            this.hitBall(p, (b.x - p.x) / n, (b.z - p.z) / n, 0.45, 22 * (1 - d / 16) * p.hero.ballPow, 0.1);
+            this.hitBall(p, (b.x - p.x) / n, (b.z - p.z) / n, 0.45, 22 * (1 - d / 22) * p.hero.ballPow, 0.1);
             this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow: 20 });
           }
           p.skill = null; p.lockT = 0.25; p.vx = p.vz = 0;
@@ -1064,6 +1148,27 @@ class Sim {
         this.towersOnce(p, s, p.r + 1.1, 24);
         sweep(p.r + 1.1, q => this.hitPlayer(p, q, 24, 20, s.fx, s.fz, 0.95, 'skill'));
         if (!s.ball && ballNear(p.r + 0.9)) { s.ball = true; this.hitBall(p, s.fx, s.fz, 0.75, 15 * p.hero.ballPow, 0.1); this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow: 15 }); }
+        if (s.t >= s.dur) p.skill = null;
+        break;
+      case 'thrust': {
+        // jet thrust: ~44 m in 1.1 s; slams enemies and the ball; stops early if something blocks it
+        const moved = Math.hypot(p.x - s.lx, p.z - s.lz); s.lx = p.x; s.lz = p.z;
+        if (s.t > 0.12 && moved < 40 * dt * 0.25) { p.skill = null; p.vx *= 0.2; p.vz *= 0.2; break; }
+        p.vx = s.fx * 40; p.vz = s.fz * 40; if (!p.grounded) p.vy = Math.max(p.vy, -0.5);
+        this.towersOnce(p, s, p.r + 0.9, 18);
+        sweep(p.r + 0.9, q => this.hitPlayer(p, q, 18, 22, s.fx, s.fz, 0.4, 'skill'));
+        if (!s.ball && ballNear(p.r + 0.8)) { s.ball = true; this.hitBall(p, s.fx, s.fz, 0.25, 30 * p.hero.ballPow, 0.2); this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow: 30, super: true }); }
+        if (s.t >= s.dur) { p.vx *= 0.35; p.vz *= 0.35; p.skill = null; }
+        break;
+      }
+      case 'spikes':
+        while (s.n < 3 && s.t >= s.next) {
+          const a = p.aimYaw != null ? p.aimYaw : p.yaw, fx = Math.cos(a), fz = Math.sin(a);
+          this.projs.push({ id: this.nextId++, type: 'spike', owner: p.id, team: p.team, x: p.x + fx * 0.8, y: p.y + 1.25, z: p.z + fz * 0.8,
+            vx: fx * 42, vy: 0, vz: fz * 42, r: 0.32, life: 0.6, dmg: 6, kb: 7, ballPow: 10, pierce: false, hit: new Set(), seq: s.n, cast: s.cast });
+          this.emit({ type: 'spikeThrow', id: p.id, n: s.n });
+          s.n++; s.next += 0.15;
+        }
         if (s.t >= s.dur) p.skill = null;
         break;
       case 'rail':
@@ -1146,13 +1251,16 @@ class Sim {
         if (!pr.hitT.has(tw.id)) { pr.hitT.add(tw.id); if (owner) this.damageTower(tw, pr.dmg, owner); }
         if (!pr.pierce) { dead = true; break; }
       }
-      if (!dead && (pr.type === 'bolt' || pr.type === 'tshot')) for (const bx of this.map.boxes) {
+      if (!dead && (pr.type === 'bolt' || pr.type === 'tshot' || pr.type === 'rocket' || pr.type === 'hook' || pr.type === 'spike')) for (const bx of this.map.boxes) {
         if (pr.y < bx.h && Math.abs(pr.x - bx.x) < bx.hx + pr.r && Math.abs(pr.z - bx.z) < bx.hz + pr.r) { dead = true; break; }
       }
       if (!dead) for (const q of this.players) {
         if (!q.alive || q.team === pr.team || pr.hit.has(q.id)) continue;
         if (Math.hypot(q.x - pr.x, q.z - pr.z) < q.r + pr.r && pr.y > q.y - 0.3 && pr.y < q.y + q.height + 0.3) {
           pr.hit.add(q.id);
+          if (pr.type === 'rocket') { dead = true; break; }
+          if (pr.type === 'hook') { this.effects.push({ type: 'pull', owner: pr.owner, kind: 'p', id: q.id, t: 1.0 }); this.emit({ type: 'hooked', id: pr.owner, target: q.id, x: pr.x, y: pr.y, z: pr.z }); dead = true; break; }
+          if (pr.type === 'spike') this.spikeBoost(pr, owner);
           if (pr.type === 'tshot') this.towerShotHitsPlayer(pr, q, fx, fz);
           else if (owner) this.hitPlayer(owner, q, pr.dmg, pr.kb, fx, fz, 0.35, 'skill');
           if (!pr.pierce) { dead = true; break; }
@@ -1168,13 +1276,18 @@ class Sim {
           this.hitBall(null, dx / dl, dz / dl, 0.25, 22, 0.1);
           b.team = pr.team;
           this.emit({ type: 'ballHit', id: -1, tower: tw ? tw.id : -1, x: b.x, y: b.y, z: b.z, pow: 22 });
+        } else if (d < BALL_R + pr.r && (pr.type === 'rocket' || pr.type === 'hook')) {
+          pr.ballDone = true; dead = true;
+          if (pr.type === 'hook') { this.effects.push({ type: 'pull', owner: pr.owner, kind: 'b', id: -1, t: 1.0 }); this.emit({ type: 'hooked', id: pr.owner, target: -1, x: pr.x, y: pr.y, z: pr.z }); }
         } else if (d < BALL_R + pr.r) {
           pr.ballDone = true;
+          if (pr.type === 'spike') this.spikeBoost(pr, owner);
           this.hitBall(owner || null, fx, fz, pr.type === 'wave' ? 0.2 : 0.08, pr.ballPow * (owner ? owner.hero.ballPow : 1), pr.type === 'wave' ? 0.1 : 0.5);
           this.emit({ type: 'ballHit', id: pr.owner, x: b.x, y: b.y, z: b.z, pow: pr.ballPow, super: pr.type === 'wave' });
           if (!pr.pierce) dead = true;
         }
       }
+      if (dead && pr.type === 'rocket' && !pr.exploded) this.explode(pr, owner);
       if (dead) { this.emit({ type: 'projEnd', kind: pr.type, team: pr.team, x: pr.x, y: pr.y, z: pr.z }); this.projs.splice(i, 1); }
     }
   }
@@ -1216,11 +1329,36 @@ class Sim {
 
   updateEffects(dt) {
     for (let i = this.dynSegs.length - 1; i >= 0; i--) { this.dynSegs[i].life -= dt; if (this.dynSegs[i].life <= 0) this.dynSegs.splice(i, 1); }
+    this.updateBarriers(dt);
     const b = this.ball;
     b.grav = null;
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i]; e.t -= dt;
       const p = this.players[e.owner];
+      if (e.type === 'pull') {   // Spike's grapple: reel the target in, then the spikes hit
+        if (!p || !p.alive) { this.effects.splice(i, 1); continue; }
+        if (e.kind === 'p') {
+          const q = this.players[e.id];
+          if (!q || !q.alive || e.t <= 0) { this.effects.splice(i, 1); continue; }
+          const dx = p.x - q.x, dz = p.z - q.z, d = Math.hypot(dx, dz) || 1;
+          if (d < p.r + q.r + 0.7) {
+            this.hitPlayer(p, q, 16, 18, -dx / d, -dz / d, 0.45, 'skill');
+            this.emit({ type: 'spikeHit', id: p.id, x: q.x, y: q.y + 1, z: q.z }); this.effects.splice(i, 1); continue;
+          }
+          q.vx = dx / d * 26; q.vz = dz / d * 26; q.stunT = Math.max(q.stunT, 0.12); q.atk = null; q.charge = null;
+        } else {
+          const ty = p.y + 1.3, dx = p.x - b.x, dy = ty - b.y, dz = p.z - b.z, d = Math.hypot(dx, dy, dz) || 1;
+          if (e.t <= 0) { this.effects.splice(i, 1); continue; }
+          if (Math.hypot(dx, dz) < p.r + BALL_R + 0.6) {
+            const a = p.aimYaw != null ? p.aimYaw : p.yaw;
+            this.hitBall(p, Math.cos(a), Math.sin(a), 0.25, 24 * p.hero.ballPow, 0);
+            this.emit({ type: 'spikeHit', id: p.id, x: b.x, y: b.y, z: b.z, ball: 1 }); this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow: 24 });
+            this.effects.splice(i, 1); continue;
+          }
+          b.vx = dx / d * 28; b.vy = dy / d * 28; b.vz = dz / d * 28; b.team = p.team; b.lastTouch = p.id; b.lastTouchT = this.time;
+        }
+        continue;
+      }
       if (e.type === 'grav' && p && p.alive) {
         const fx = Math.cos(p.yaw), fz = Math.sin(p.yaw);
         const tx = p.x + fx * (p.r + BALL_R + 0.6), tz = p.z + fz * (p.r + BALL_R + 0.6);
@@ -1298,7 +1436,8 @@ class Sim {
     for (let i = 0, n = segs.length + this.dynSegs.length; i < n; i++) {
       const s = i < segs.length ? segs[i] : this.dynSegs[i - segs.length];
       if (p.y > s.maxY || p.y + p.height < s.minY) continue;
-      circleSeg(p, s, p.r, p.stunT > 0 ? 0.5 : 0, true);
+      const imp = circleSeg(p, s, p.r, p.stunT > 0 ? 0.5 : 0, true);
+      if (i < segs.length && imp > WALL_PIN_MIN && p.pin && this.time - p.pin.t < WALL_PIN_WINDOW) this.wallSlam(p, imp);
     }
     // goal roof
     if (Math.abs(p.x) > HL && p.y + p.height > GH) { p.y = GH - p.height; p.vy = Math.min(0, p.vy); }
@@ -1341,6 +1480,52 @@ class Sim {
         b.ramp = null;
       } else if (along < -bx.hx - BALL_R || Math.abs(b.z - bx.z) > bx.hz + BALL_R || b.y - boxTop(bx, b.x) > BALL_R * 1.8) b.ramp = null;
     }
+  }
+
+  /* Atlas's glass barrier surges forward for a moment: enemies and the ball in its path get shoved and hit once. */
+  updateBarriers(dt) {
+    const b = this.ball, groups = new Set();
+    for (const sg of this.dynSegs) if (sg.grp && sg.grp.moveT > 0) groups.add(sg.grp);
+    for (const g of groups) {
+      const step = Math.min(dt, g.moveT); g.moveT -= dt;
+      const segs = this.dynSegs.filter(sg => sg.grp === g), owner = this.players[g.owner];
+      for (const sg of segs) { sg.ax += g.vx * step; sg.az += g.vz * step; sg.bx += g.vx * step; sg.bz += g.vz * step; }
+      for (const q of this.players) {
+        if (!q.alive || q.team === segs[0].team || q.y > BARRIER_H) continue;
+        for (const sg of segs) {
+          const c = closestOnSeg(sg, q.x, q.z);
+          if (Math.hypot(q.x - c[0], q.z - c[1]) < q.r + 0.5) {
+            q.x += g.vx * step; q.z += g.vz * step;
+            if (!g.hit.has(q.id) && owner) { g.hit.add(q.id); this.hitPlayer(owner, q, 12, 17, g.fx, g.fz, 0.3, 'skill'); }
+            break;
+          }
+        }
+      }
+      if (!g.ball && b.y - BALL_R < BARRIER_H) for (const sg of segs) {
+        const c = closestOnSeg(sg, b.x, b.z);
+        if (Math.hypot(b.x - c[0], b.z - c[1]) < BALL_R + 0.5) {
+          g.ball = true; this.hitBall(owner || null, g.fx, g.fz, 0.2, 24, 0.2);
+          this.emit({ type: 'ballHit', id: g.owner, x: b.x, y: b.y, z: b.z, pow: 24 });
+          break;
+        }
+      }
+    }
+  }
+
+  /* Knocked into an arena wall by an enemy (player hit or their ball): the closer to the wall the hit started, the harder the slam.
+     Pinned right against the wall at full force = up to 55% of max HP. Bulwark's charge also stuns. */
+  wallSlam(p, imp) {
+    const pin = p.pin; p.pin = null;
+    const att = this.players[pin.by];
+    const d = Math.hypot(p.x - pin.x, p.z - pin.z), prox = clamp(1 - d / WALL_PIN_RANGE, 0, 1);
+    if (prox <= 0 || p.invulnT > 0 || p.suitT > 0) return;
+    const dmg = p.maxHp * WALL_PIN_MAX * prox * clamp(imp / 16, 0.35, 1) * this.mods(p.team).def;
+    p.hp -= dmg; p.lastDmgT = this.time; p.anim.hitFlash = 0.2;
+    if (att) { att.stats.dmg += dmg; p.lastHitBy = att.id; p.lastHitT = this.time; }
+    p.stunT = Math.max(p.stunT, 0.4);
+    this.emit({ type: 'wallSlam', id: p.id, by: att ? att.id : -1, x: p.x, y: p.y + p.height * 0.5, z: p.z, dmg, v: imp });
+    if (p.hp <= 0) { this.knockOut(p, att); return; }
+    if (pin.kind === 'bash') { p.stunT = Math.max(p.stunT, 2.5); p.dizzyT = Math.max(p.dizzyT, 2.5); p.atk = p.charge = null; }
   }
 
   insideArena(x, z) {
@@ -1403,6 +1588,12 @@ class Sim {
       if (b.y - BALL_R > s2.maxY || b.y + BALL_R < s2.minY) continue;
       const hit = circleSeg(b, s2, BALL_R, s2.kind === 'barrier' ? 0.6 : 0.85, false);
       if (hit > 5) this.emit({ type: 'wallHit', x: b.x, y: b.y, z: b.z, v: hit });
+      if (hit > 8 && i < segs.length && !b.wallBoosted) {   // first wall bounce after a touch: the wall springs it back faster
+        b.wallBoosted = true;
+        const sp = Math.hypot(b.vx, b.vy, b.vz), k = Math.min(WALL_BALL_BOOST, 42 / Math.max(1, sp));
+        b.vx *= k; b.vz *= k; b.vy *= Math.min(k, 1.1);
+        this.emit({ type: 'wallBoost', x: b.x, y: b.y, z: b.z, v: hit });
+      }
     }
     for (const bx of this.map.boxes) { if (bx.kind === 'ramp') this.ballRamp(b, bx); else sphereBox(b, bx, BALL_R, 0.72); }
     for (const tw of this.towers) {
@@ -1432,6 +1623,7 @@ class Sim {
       for (let j = i + 1; j < ps.length; j++) {
         const c = ps[j]; if (!c.alive || c.intangible) continue;
         if (a.y > c.y + c.height || c.y > a.y + a.height) continue;
+        if ((a.skill && a.skill.id === 'thrust') || (c.skill && c.skill.id === 'thrust')) continue;   // the jet thrust plows through (hits are handled by the skill)
         const dx = c.x - a.x, dz = c.z - a.z, d = Math.hypot(dx, dz), m = a.r + c.r;
         if (d >= m || d < 1e-5) continue;
         const o = (m - d) * 0.5, nx = dx / d, nz = dz / d;
@@ -1450,7 +1642,7 @@ class Sim {
       const dx = b.x - p.x, dy = b.y - cy, dz = b.z - p.z;
       const d = Math.hypot(dx, dy, dz), m = BALL_R + p.r;
       if (d >= m || d < 1e-5) continue;
-      b.dip = 0;
+      b.dip = 0; b.wallBoosted = false;
       const nx = dx / d, ny = dy / d, nz = dz / d, o = m - d;
       const mp = p.hero.weight * (p.shielding ? 4 : 1);
       const wb = mp / (mp + BALL_MASS * 0.6);
@@ -1460,8 +1652,8 @@ class Sim {
       if (ny > 0.6 && b.y > p.y + p.height - 0.2) { b.vy = Math.max(b.vy, 3); }
       const rel = (b.vx - p.vx) * nx + (b.vy - p.vy) * ny + (b.vz - p.vz) * nz;
       const hostile = b.team >= 0 && b.team !== p.team && -rel > BALL_HURT_SPEED && this.time > p.ballHitT && p.invulnT <= 0 && !p.intangible;
-      if (p.suitT > 0 && rel < -3) {   // Bumper Suit: the ball bounces straight back at the speed it came in, now his team's ball
-        const k = -2 * rel; b.vx += k * nx; b.vy += k * ny; b.vz += k * nz; b.vy = Math.min(Math.max(b.vy, 2), BALL_VY_KICK);
+      if (p.suitT > 0 && rel < -3) {   // suit / bubble shield: the ball bounces back off them (faster the faster it came, scaled by their weight), now their team's ball
+        const k = -(1 + Math.min(1.4, 0.7 + 0.3 * p.hero.weight)) * rel; b.vx += k * nx; b.vy += k * ny; b.vz += k * nz; b.vy = Math.min(Math.max(b.vy, 2), BALL_VY_KICK);
         b.team = p.team; b.lastTouch = p.id; b.lastTouchT = this.time; this.addTouch(p);
         if (this.time > p.ballHitT) { p.ballHitT = this.time + 0.2; this.emit({ type: 'reflect', id: p.id, by: -1, x: b.x - nx * BALL_R, y: b.y - ny * BALL_R, z: b.z - nz * BALL_R, ball: 1 }); }
         this.checkSave(p, pre);
@@ -1498,6 +1690,7 @@ class Sim {
   collideBumpers() {
     const b = this.ball;
     for (const bm of this.bumpers) {
+      if (bm.fly) continue;
       const owner = this.players[bm.owner];
       for (const q of this.players) {
         if (!q.alive || q.team === bm.team || q.intangible || q.y > bm.h) continue;
@@ -1527,6 +1720,85 @@ class Sim {
         }
       }
     }
+  }
+
+  /* Bubble Throw: a big floating bubble. Enemies bounce off it (knockback scaled by their weight); the ball rebounds off it and becomes her team's. */
+  collideBubbles() {
+    const b = this.ball;
+    for (const bu of this.bubbles) {
+      const owner = this.players[bu.owner];
+      for (const q of this.players) {
+        if (!q.alive || q.team === bu.team || q.intangible) continue;
+        const cy = clamp(bu.y, q.y + q.r, q.y + q.height - q.r);
+        const dx = q.x - bu.x, dy = cy - bu.y, dz = q.z - bu.z, d = Math.hypot(dx, dy, dz), m = bu.r + q.r;
+        if (d >= m) continue;
+        const hl = Math.hypot(dx, dz), nx = hl > 1e-4 ? dx / hl : 1, nz = hl > 1e-4 ? dz / hl : 0;
+        const need = Math.sqrt(Math.max(0, m * m - dy * dy)) + 0.01; q.x = bu.x + nx * need; q.z = bu.z + nz * need;
+        if (this.time < (bu.cool[q.id] || 0)) continue;
+        bu.cool[q.id] = this.time + 0.5;
+        this.hitPlayer(owner, q, 4, 16, nx, nz, 0.35, 'bubble');
+        this.emit({ type: 'bubbleBounce', bid: bu.id, id: q.id, x: bu.x + nx * bu.r, y: bu.y, z: bu.z + nz * bu.r });
+      }
+      const dx = b.x - bu.x, dy = b.y - bu.y, dz = b.z - bu.z, d = Math.hypot(dx, dy, dz), m = bu.r + BALL_R;
+      if (d < m && d > 1e-4) {
+        const nx = dx / d, ny = dy / d, nz = dz / d;
+        b.x = bu.x + nx * m; b.y = bu.y + ny * m; b.z = bu.z + nz * m;
+        const vn = b.vx * nx + b.vy * ny + b.vz * nz;
+        if (vn < 0) {
+          b.vx -= 2.1 * vn * nx; b.vy -= 2.1 * vn * ny; b.vz -= 2.1 * vn * nz;
+          const out = b.vx * nx + b.vy * ny + b.vz * nz; if (out < 12) { b.vx += nx * (12 - out); b.vy += ny * (12 - out); b.vz += nz * (12 - out); }
+          b.vy = Math.min(b.vy, BALL_VY_KICK);
+          b.team = bu.team; b.lastTouch = bu.owner; b.lastTouchT = this.time; b.wallBoosted = false;
+          if (this.time > bu.ballT) { bu.ballT = this.time + 0.15; this.emit({ type: 'bubbleBounce', bid: bu.id, id: -1, x: b.x - nx * BALL_R, y: b.y - ny * BALL_R, z: b.z - nz * BALL_R, ball: 1 }); }
+        }
+      }
+    }
+  }
+
+  /* Bubble Shield: enemies who touch her get bounced away (no damage). */
+  collideSuits() {
+    for (const p of this.players) {
+      if (!p.alive || p.suitT <= 0 || p.suitKind !== 'bubble') continue;
+      for (const q of this.players) {
+        if (!q.alive || q.team === p.team || q.intangible) continue;
+        const dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz);
+        if (d > p.r + q.r + 0.55 || Math.abs(q.y - p.y) > 2) continue;
+        if (this.time < (q.bubbleT || 0)) continue;
+        q.bubbleT = this.time + 0.5;
+        this.hitPlayer(p, q, 0, 13, d > 1e-4 ? dx / d : 1, d > 1e-4 ? dz / d : 0, 0.35, 'bubble');
+        this.emit({ type: 'bubbleBounce', bid: -1, id: q.id, x: (p.x + q.x) / 2, y: p.y + 1.2, z: (p.z + q.z) / 2 });
+      }
+    }
+  }
+
+  /* Rocket explosion: blast damage and knockback with falloff, kicks the ball away from the blast. */
+  explode(pr, owner) {
+    pr.exploded = true;
+    const b = this.ball, R = ROCKET_BLAST;
+    this.emit({ type: 'explode', id: pr.owner, x: pr.x, y: pr.y, z: pr.z, r: R });
+    if (owner) for (const q of this.players) {
+      if (!q.alive || q.team === pr.team) continue;
+      const dx = q.x - pr.x, dz = q.z - pr.z, d = Math.hypot(dx, dz), dy = (q.y + q.height * 0.5) - pr.y;
+      if (d > R + q.r || Math.abs(dy) > 2.6) continue;
+      const fall = 1 - 0.5 * d / (R + q.r), n = d || 1;
+      this.hitPlayer(owner, q, 20 * fall, 18 * fall, dx / n, dz / n, 0.5, 'skill');
+    }
+    const dx = b.x - pr.x, dy = b.y - pr.y, dz = b.z - pr.z, d = Math.hypot(dx, dy, dz);
+    if (d < R + BALL_R) {
+      const hl = Math.hypot(dx, dz) || 1, fall = 1 - 0.5 * d / (R + BALL_R);
+      this.hitBall(owner || null, dx / hl, dz / hl, 0.35, 26 * fall * (owner ? owner.hero.ballPow : 1), 0.2);
+      this.emit({ type: 'ballHit', id: pr.owner, x: b.x, y: b.y, z: b.z, pow: 26, super: true });
+    }
+    if (owner) for (const tw of this.towers) if (tw.alive && tw.team !== pr.team && Math.hypot(tw.x - pr.x, tw.z - pr.z) < R + tw.r) this.damageTower(tw, 18, owner);
+  }
+
+  /* Spike Volley: landing the first two spikes of a volley makes the third hit much harder. */
+  spikeBoost(pr, owner) {
+    if (!owner || pr.boostDone) return;
+    pr.boostDone = true;
+    const c = owner.spikeCombo; if (!c || c.cast !== pr.cast) return;
+    c.hits.add(pr.seq);
+    if (pr.seq === 2 && c.hits.has(0) && c.hits.has(1)) { pr.dmg *= 2.5; pr.kb *= 2.2; pr.ballPow *= 2.2; this.emit({ type: 'spikeCombo', id: pr.owner, x: pr.x, y: pr.y, z: pr.z }); }
   }
 
   updateItems(dt) {
@@ -1599,7 +1871,7 @@ class Sim {
     let dmg = 4 + (speed - BALL_HURT_SPEED) * 1.0;
     dmg *= this.mods(b.team).atk * this.mods(p.team).def;
     p.hp -= dmg; p.lastDmgT = this.time; p.anim.hitFlash = 0.15;
-    if (att) { att.stats.dmg += dmg; p.lastHitBy = att.id; p.lastHitT = this.time; }
+    if (att) { att.stats.dmg += dmg; p.lastHitBy = att.id; p.lastHitT = this.time; if (att.team !== p.team) p.pin = { x: p.x, z: p.z, t: this.time, by: att.id, kind: 'ball' }; }
     const hn = Math.hypot(nx, nz) || 1, kb = speed * 0.42 / p.hero.weight;
     p.vx = -nx / hn * kb; p.vz = -nz / hn * kb; p.vy = Math.max(p.vy, kb * 0.3 + 2);
     p.stunT = Math.max(p.stunT, 0.15 + kb * 0.02); p.atk = null; p.charge = null;
@@ -1712,7 +1984,7 @@ class Sim {
     if (s.bt !== undefined) this.ball.team = s.bt;
     if (s.tw) s.tw.forEach(a => { const t = this.towers[a[0]]; if (t) { t.team = a[1]; t.hp = a[2]; t.alive = !!a[3]; t.h = t.alive ? TOWER_H : 1.0; t.cd = a[4]; t.aimYaw = a[5]; } });
     if (s.sp) s.sp.forEach((t, i) => { if (this.pads[i]) { this.pads[i].active = !t; this.pads[i].t = t; } });
-    this.dynSegs = s.ds.map(a => { const g = seg(a[1], a[2], a[3], a[4], 0, 4.2, 'barrier'); g.id = a[0]; g.life = a[5]; g.team = a[6]; return g; });
+    this.dynSegs = s.ds.map(a => { const g = seg(a[1], a[2], a[3], a[4], 0, BARRIER_H, 'barrier'); g.id = a[0]; g.life = a[5]; g.team = a[6]; return g; });
   }
 }
 
@@ -1873,7 +2145,8 @@ class BotBrain {
     } else if (mode === 'guard') {
       tx = ownX + dir * 3.2; tz = clamp(b.z * 0.4, -GW + 1.2, GW - 1.2);
       aim = Math.atan2(b.z - p.z, b.x - p.x);
-      if (threat && ballFromOwn < 24 && p.heroId === 'bumper' && p.cd1 <= 0 && Math.random() < d.skill) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
+      if (threat && ballFromOwn < 24 && p.heroId === 'bumper' && p.cd2 <= 0 && Math.random() < d.skill) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s2 = true; }
+      if (threat && ballFromOwn < 24 && p.heroId === 'bubble' && p.cd1 <= 0 && Math.random() < d.skill) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
       if (threat && ballFromOwn < 22 && p.heroId === 'atlas') {
         if (p.cd2 <= 0 && Math.random() < d.skill) inp.s2 = true;
         else if (p.cd1 <= 0 && ballFromOwn < 14 && Math.random() < d.skill * 0.5) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
@@ -1883,7 +2156,7 @@ class BotBrain {
       tx = clamp(b.x - dir * 14, -HL + 6, HL - 6); if ((tx - ownX) * dir < 8) tx = ownX + dir * 8;
       tz = b.z * 0.55; aim = Math.atan2(b.z - p.z, b.x - p.x);
       sprint = Math.hypot(tx - p.x, tz - p.z) > 10;
-      if (threat && ballFromOwn < 30 && p.heroId === 'bumper' && p.cd1 <= 0 && Math.hypot(b.x - p.x, b.z - p.z) < 14 && Math.random() < d.skill * 0.5) inp.s1 = true;
+      if (threat && ballFromOwn < 30 && (p.heroId === 'bumper' ? p.cd2 : p.heroId === 'bubble' ? p.cd1 : 1) <= 0 && Math.hypot(b.x - p.x, b.z - p.z) < 14 && Math.random() < d.skill * 0.5) { if (p.heroId === 'bumper') inp.s2 = true; else inp.s1 = true; }
     } else if (mode === 'support') {
       tx = clamp(b.x + dir * 9, -HL + 8, HL - 8); tz = clamp(-b.z * 0.4 + (p.slot % 2 ? 6 : -6), -HW + 4, HW - 4);
       aim = Math.atan2(b.z - p.z, b.x - p.x);
@@ -1895,7 +2168,9 @@ class BotBrain {
         const r = Math.random();
         if (r < d.skill * 0.35 && p.cd1 <= 0 && ['bash', 'flurry', 'pulse', 'blink'].includes(p.hero.s1.id) && p.hero.s1.id !== 'blink') inp.s1 = true;
         else if (r < d.skill * 0.5 && p.cd2 <= 0 && ['slam', 'uppercut', 'cyclone'].includes(p.hero.s2.id)) inp.s2 = true;
-        else if (p.heroId === 'bumper' && p.cd2 <= 0 && r < d.skill * 0.6) inp.s2 = true;
+        else if (p.heroId === 'bumper' && p.cd1 <= 0 && r < d.skill * 0.6) inp.s1 = true;
+        else if (p.heroId === 'bubble' && p.cd2 <= 0 && r < d.skill * 0.5) inp.s2 = true;
+        else if (p.heroId === 'spike' && p.cd2 <= 0 && r < d.skill * 0.6) inp.s2 = true;
         else this.press = { key: Math.random() < 0.6 ? 'punch' : 'kick', until: sim.time + 0.05 + Math.random() * 0.15 };
         this.nextAtk = sim.time + 0.25 + (1 - d.aggro) * 0.4;
       } else if (nearD < 9 && p.heroId === 'volt' && p.cd1 <= 0 && Math.random() < d.skill) inp.s1 = true;
@@ -1934,10 +2209,16 @@ class BotBrain {
         if (p.heroId === 'volt' && p.cd2 <= 0 && ballD < 16 && lineToGoal && distGoal < 50) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s2 = true; }
         if (p.heroId === 'zip' && p.cd2 <= 0 && ballD < 3.8 && distGoal < 45) inp.s2 = true;
         if (p.heroId === 'nova' && p.cd2 <= 0 && ballD < 9 && lineToGoal) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s2 = true; }
+        if (p.heroId === 'rocket' && p.cd1 <= 0 && ballD < 14 && ballD > 3 && lineToGoal && distGoal < 45) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
         if (p.heroId === 'bulwark' && p.cd1 <= 0 && ballD < 6 && lineToGoal) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
         if (p.heroId === 'blaze' && p.cd2 <= 0 && ballD < 5 && b.y < 2) inp.s2 = true;
       }
       if (p.heroId === 'zip' && p.cd1 <= 0 && ballD > 12 && Math.random() < d.skill * 0.4) { aim = Math.atan2(tz - p.z, tx - p.x); inp.s1 = true; }
+      if (p.heroId === 'spike' && p.cd1 <= 0 && ballD > 7 && ballD < 21 && Math.random() < d.skill * 0.3) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
+      if (p.heroId === 'bubble' && p.cd1 <= 0 && threat && ballFromOwn < 32 && ballD < 16 && Math.random() < d.skill * 0.3) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
+      if (p.heroId === 'bumper' && p.cd2 <= 0 && threat && ballFromOwn < 32 && ballD < 14 && Math.random() < d.skill * 0.3) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s2 = true; }
+      if (p.heroId === 'spike' && p.cd2 <= 0 && near && nearD < 14 && Math.random() < d.skill * 0.08) { aim = Math.atan2(near.z - p.z, near.x - p.x); inp.s2 = true; }
+      if (p.heroId === 'rocket' && p.cd2 <= 0 && ballD > 9 && ballD < 30 && Math.random() < d.skill * 0.15) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s2 = true; }
       if (b.y > 3 && ballD < 4 && p.grounded && Math.random() < 0.3) inp.jump = true;
     }
     // steer around obstacles
@@ -2502,6 +2783,44 @@ function buildHero(heroId, team, isMe, slot) {
     for (const y of [-0.45, 0, 0.45]) { const band = new THREE.Mesh(new THREE.TorusGeometry(1.3 * s * Math.cos(y), 0.07 * s, 8, 36), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })); band.rotation.x = Math.PI / 2; band.position.y = Math.sin(y) * 1.25 * s; suit.add(band); }
     ex.suit = suit; ex.suitMesh = sm;
   }
+  if (heroId === 'bubble') {
+    const helm = new THREE.Mesh(new THREE.SphereGeometry(0.62 * s, 24, 16), new THREE.MeshBasicMaterial({ color: 0xdff6ff, transparent: true, opacity: 0.28, depthWrite: false }));
+    helm.position.set(0.03 * s, Y(1.78), 0); body.add(helm);
+    const ring2 = add(mesh(new THREE.TorusGeometry(0.42 * s, 0.07 * s, 8, 24), M('#ffffff'), 0.03 * s, Y(1.4), 0)); ring2.rotation.x = Math.PI / 2;
+    for (const z of [1, -1]) add(mesh(SPH, M('#bfeaff'), -0.15 * s, Y(2.05), z * 0.38 * s, 0.17 * s), 1.1);
+    ex.orbs = [];
+    for (let i = 0; i < 3; i++) { const o = new THREE.Mesh(SPH, new THREE.MeshBasicMaterial({ color: 0xcff1ff, transparent: true, opacity: 0.6 })); o.scale.setScalar((0.1 + i * 0.03) * s); g.add(o); ex.orbs.push(o); }
+    const suit = new THREE.Group(); suit.position.y = 1.0 * s; suit.visible = false; g.add(suit);
+    const sm = new THREE.Mesh(new THREE.SphereGeometry(1, 30, 22), new THREE.MeshBasicMaterial({ color: 0xbfeaff, transparent: true, opacity: 0.3, depthWrite: false }));
+    sm.scale.set(1.45 * s, 1.4 * s, 1.45 * s); suit.add(sm);
+    const shine = new THREE.Mesh(SPH, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })); shine.scale.set(0.28 * s, 0.16 * s, 0.1 * s); shine.position.set(0.7 * s, 0.75 * s, 0.5 * s); suit.add(shine);
+    ex.suit = suit; ex.suitMesh = sm;
+  }
+  if (heroId === 'rocket') {
+    const pack = new THREE.Group(); pack.position.set(-0.5 * s, Y(1.15), 0); body.add(pack);
+    for (const z of [1, -1]) {
+      const tank = mesh(new THREE.CylinderGeometry(0.17 * s, 0.17 * s, 0.75 * s, 14), metal, 0, 0, z * 0.2 * s); outline(tank, 1.08); pack.add(tank);
+      const cap = mesh(SPH, M('#e63946'), 0, 0.38 * s, z * 0.2 * s, 0.17 * s); pack.add(cap);
+      const noz = mesh(new THREE.CylinderGeometry(0.1 * s, 0.15 * s, 0.18 * s, 12), dark, 0, -0.45 * s, z * 0.2 * s); pack.add(noz);
+    }
+    const fin = mesh(BOX, M('#e63946'), -0.15 * s, -0.1 * s, 0, 0.25 * s, 0.4 * s, 0.05 * s); pack.add(fin);
+    ex.jets = [];
+    for (const z of [1, -1]) {
+      const fl = new THREE.Mesh(new THREE.ConeGeometry(0.13 * s, 0.9 * s, 10), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+      fl.rotation.z = Math.PI; fl.position.set(-0.5 * s, Y(1.15) - 0.9 * s, z * 0.2 * s); fl.visible = false; body.add(fl); ex.jets.push(fl);
+    }
+    const gog = add(mesh(new THREE.TorusGeometry(0.43 * s, 0.05 * s, 6, 24), dark, 0.03 * s, Y(1.97), 0)); gog.rotation.x = Math.PI / 2;
+    for (const z of [1, -1]) { const lens = add(mesh(new THREE.TorusGeometry(0.1 * s, 0.035 * s, 6, 16), metal, 0.42 * s, Y(1.99), z * 0.14 * s), 1.1); lens.rotation.y = Math.PI / 2; add(mesh(SPH, new THREE.MeshBasicMaterial({ color: 0xffd23f }), 0.43 * s, Y(1.99), z * 0.14 * s, 0.02 * s, 0.085 * s, 0.085 * s)); }
+  }
+  if (heroId === 'spike') {
+    const spk = M('#e8edf5');
+    const cone = (x, y, z, rx, rz, len) => { const c = mesh(new THREE.ConeGeometry(0.09 * s, len * s, 8), spk, x, y, z); c.rotation.set(rx, 0, rz); outline(c, 1.1); body.add(c); };
+    for (const z of [1, -1]) for (let i = 0; i < 3; i++) cone(-0.05 * s - i * 0.12 * s, Y(1.5) + i * 0.04 * s, z * (0.5 + i * 0.03) * s, z * -0.9, 0.3, 0.35);
+    for (let i = 0; i < 4; i++) cone(-0.45 * s, Y(0.85 + i * 0.17), (i % 2 ? 0.12 : -0.12) * s, 0, 1.4, 0.32);
+    for (let i = -2; i <= 2; i++) cone(-0.05 * s, Y(2.2) - Math.abs(i) * 0.05 * s, i * 0.14 * s, i * -0.25, 0.25, 0.32);
+    const chain = new THREE.Group(); chain.position.set(0.2 * s, Y(0.62), 0.42 * s); body.add(chain);
+    for (let i = 0; i < 4; i++) { const l = mesh(new THREE.TorusGeometry(0.07 * s, 0.022 * s, 6, 12), metal, 0, -i * 0.11 * s, 0); l.rotation.y = i % 2 ? Math.PI / 2 : 0; chain.add(l); }
+  }
   if (heroId === 'zip') {
     const wc = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 1.1, 2.3, 28, 1, true), new THREE.MeshBasicMaterial({ map: WIND_TEX, color: 0xe8fff0, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     wc.position.y = 1.1; wc.visible = false; g.add(wc); ex.wind = wc;
@@ -3021,13 +3340,57 @@ function makeBumperMesh(team) {
   g.userData = { post, glow, squash: 0, born: perfNow() };
   return g;
 }
+const bubbleMeshes = new Map();
+function syncBubbles(sim, dt, t) {
+  const seen = new Set();
+  for (const b of sim.bubbles || []) {
+    seen.add(b.id);
+    let m = bubbleMeshes.get(b.id);
+    if (!m) {
+      m = new THREE.Mesh(new THREE.SphereGeometry(1, 30, 22), shieldMat(FB.TEAM_COLORS[b.team])); m.userData = { squash: 0, born: perfNow() };
+      const shine = new THREE.Mesh(SPH, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 })); shine.scale.set(0.22, 0.12, 0.08); shine.position.set(0.45, 0.55, 0.5); m.add(shine);
+      scene.add(m); bubbleMeshes.set(b.id, m); burst(b.x, b.y, b.z, 10, ['#ffffff', '#bfeaff'], 4, 0.25, 0.4, 0, 'puff');
+    }
+    const u = m.userData, age = (perfNow() - u.born) / 1000, grow = Math.min(1, age / 0.25);
+    u.squash = Math.max(0, u.squash - dt * 3);
+    const sq = u.squash * Math.sin((1 - u.squash) * 18) * 0.2, R = (b.r || 2) * grow;
+    m.scale.set(R * (1 + sq), R * (1 - sq), R * (1 + sq)); m.position.set(b.x, b.y, b.z); m.rotation.y = t * 0.6;
+    const un = m.material.uniforms; un.uT.value = t; un.uOp.value = b.life < 1.2 ? (Math.sin(t * 25) > 0 ? 0.9 : 0.3) : 0.75;
+  }
+  for (const [id, m] of bubbleMeshes) if (!seen.has(id)) { scene.remove(m); bubbleMeshes.delete(id); }
+}
+/* Spike's grapple chain: links from his hand to the hook (or to whatever it's reeling in). */
+const CHAIN_MAX = 160;
+const chainMesh = new THREE.InstancedMesh(new THREE.TorusGeometry(0.13, 0.04, 6, 10), rimify(toon('#cfd6e2')), CHAIN_MAX);
+chainMesh.count = 0; chainMesh.frustumCulled = false; scene.add(chainMesh);
+const _cm = new THREE.Matrix4(), _cq = new THREE.Quaternion(), _cq2 = new THREE.Quaternion(), _cs = new THREE.Vector3(1, 1, 1), _ca = new THREE.Vector3(), _cb = new THREE.Vector3(), _cd = new THREE.Vector3(), _cx = new THREE.Vector3(1, 0, 0), _cp = new THREE.Vector3();
+function syncChains(sim) {
+  let n = 0;
+  const link = (ox, oy, oz, tx, ty, tz) => {
+    _ca.set(ox, oy, oz); _cb.set(tx, ty, tz); _cd.subVectors(_cb, _ca); const L = _cd.length(); if (L < 0.2) return; _cd.normalize();
+    _cq.setFromUnitVectors(_cx, _cd);
+    for (let d = 0.2; d < L && n < CHAIN_MAX; d += 0.3) {
+      _cq2.setFromAxisAngle(_cx, (n % 2) * Math.PI / 2); const q = _cq.clone().multiply(_cq2);
+      _cp.copy(_ca).addScaledVector(_cd, d); _cm.compose(_cp, q, _cs); chainMesh.setMatrixAt(n++, _cm);
+    }
+  };
+  const hand = id => { const m = APP.models[id]; if (!m) return null; m.g.updateMatrixWorld(true); _pw.copy(m.fistR.position); m.body.localToWorld(_pw); return [_pw.x, _pw.y, _pw.z]; };
+  for (const pr of sim.projs) if (pr.type === 'hook' && pr.owner >= 0) { const h = hand(pr.owner); if (h) link(h[0], h[1], h[2], pr.x, pr.y, pr.z); }
+  for (const e of sim.effects) if (e.type === 'pull') {
+    const h = hand(e.owner); if (!h) continue;
+    if (e.kind === 'b') { const b = sim.ball; link(h[0], h[1], h[2], b.x, b.y, b.z); }
+    else { const tm = APP.models[e.id]; if (tm) link(h[0], h[1], h[2], tm.g.position.x, tm.g.position.y + 1.1, tm.g.position.z); }
+  }
+  chainMesh.count = n; chainMesh.instanceMatrix.needsUpdate = true;
+}
 function syncBumpers(sim, dt) {
   const seen = new Set(), now = perfNow();
   for (const b of sim.bumpers || []) {
     seen.add(b.id);
     let m = bumperMeshes.get(b.id);
     if (!m) { m = makeBumperMesh(b.team); scene.add(m); bumperMeshes.set(b.id, m); burst(b.x, 0.5, b.z, 8, ['#ffffff', FB.TEAM_COLORS[b.team]], 4, 0.2, 0.4, 0, 'puff'); }
-    m.position.set(b.x, 0, b.z);
+    m.position.set(b.x, b.y || 0, b.z);
+    if (b.fly) { m.userData.born = now; m.rotation.y += dt * 12; m.userData.glow.visible = false; } else { m.userData.glow.visible = true; }
     const u = m.userData, age = (now - u.born) / 1000, pop = age < 0.35 ? 1 - Math.pow(1 - age / 0.35, 3) * Math.cos(age * 18) : 1;
     u.squash = Math.max(0, u.squash - dt * 4);
     const sq = u.squash * Math.cos((1 - u.squash) * 20);
@@ -3049,6 +3412,21 @@ function syncProjectiles(sim) {
         const zg = new THREE.BufferGeometry(); zg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(10 * 3), 3));
         const zap = new THREE.Line(zg, new THREE.LineBasicMaterial({ color: 0xfff27a })); m.add(zap); m.userData.zap = zap;
       }
+      else if (p.type === 'rocket') {
+        m = new THREE.Group();
+        const bodyM = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 1.1, 12), rimify(toon('#dfe6ee'))); bodyM.rotation.z = Math.PI / 2; outline(bodyM, 1.12); m.add(bodyM);
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.45, 12), rimify(toon('#e63946'))); nose.rotation.z = -Math.PI / 2; nose.position.x = 0.77; m.add(nose);
+        for (let i = 0; i < 4; i++) { const fin = new THREE.Mesh(BOX, rimify(toon('#e63946'))); fin.scale.set(0.3, 0.04, 0.5); fin.position.x = -0.45; fin.rotation.x = i * Math.PI / 2; m.add(fin); }
+        const fl = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.8, 10), new THREE.MeshBasicMaterial({ color: 0xffb347, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false })); fl.rotation.z = Math.PI / 2; fl.position.x = -0.95; m.add(fl);
+      }
+      else if (p.type === 'hook') {
+        m = new THREE.Group();
+        const hub = new THREE.Mesh(SPH, rimify(toon('#cfd6e2'))); hub.scale.setScalar(0.22); outline(hub, 1.15); m.add(hub);
+        for (let i = 0; i < 3; i++) { const claw = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.55, 6), rimify(toon('#e8edf5'))); claw.rotation.z = -Math.PI / 2; claw.position.x = 0.25; claw.rotation.x = i * Math.PI * 2 / 3; claw.rotation.y = 0.5; m.add(claw); }
+      }
+      else if (p.type === 'spike') {
+        m = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.75, 8), rimify(toon('#e8edf5'))); m.geometry.rotateZ(-Math.PI / 2); outline(m, 1.15);
+      }
       else if (p.type === 'tshot') { m = new THREE.Mesh(SPH, new THREE.MeshBasicMaterial({ color: TEAMC[p.team] })); m.scale.setScalar(0.6); outline(m, 1.2); const c = new THREE.Mesh(SPH, new THREE.MeshBasicMaterial({ color: 0xffffff })); c.scale.setScalar(0.55); m.add(c); }
       else {
         m = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.45, 8, 28, Math.PI), new THREE.MeshBasicMaterial({ color: 0xff8fd0, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -3058,6 +3436,8 @@ function syncProjectiles(sim) {
     }
     m.position.set(p.x, p.y, p.z);
     if (p.type === 'wave') { const a = Math.atan2(p.vz, p.vx); m.rotation.set(-Math.PI / 2, 0, 0); m.rotation.order = 'YXZ'; m.rotation.y = -a - Math.PI / 2; }
+    if (p.type === 'rocket' || p.type === 'hook' || p.type === 'spike') { m.rotation.set(0, -Math.atan2(p.vz, p.vx), 0); if (p.type === 'hook') m.rotation.x = perfNow() * 0.02; }
+    if (p.type === 'rocket') { burst(p.x - p.vx * 0.03, p.y, p.z - p.vz * 0.03, 2, ['#ffffff', '#d9dde6', '#ffb347'], 1.2, 0.35, 0.5, -1, 'puff'); }
     if (p.type === 'bolt') {
       const z = m.userData.zap, arr = z.geometry.attributes.position.array, sp2 = Math.hypot(p.vx, p.vz) || 1, dx = -p.vx / sp2, dz = -p.vz / sp2;
       for (let i = 0; i < 10; i++) { const d = i * 0.9 / 0.38; arr[i * 3] = dx * d + (Math.random() - 0.5) * 1.4; arr[i * 3 + 1] = (Math.random() - 0.5) * 1.4; arr[i * 3 + 2] = dz * d + (Math.random() - 0.5) * 1.4; }
@@ -3074,12 +3454,16 @@ function syncProjectiles(sim) {
     let m = segMeshes.get(s.id);
     if (!m) {
       const ht = HEX_TEX.clone(); ht.needsUpdate = true; ht.repeat.set(s.L / 2.5, s.maxY / 2.5);
-      m = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ color: TEAMC[s.team], map: ht, transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending }));
-      m.scale.set(s.L, s.maxY, 0.35); m.position.set((s.ax + s.bx) / 2, s.maxY / 2, (s.az + s.bz) / 2); m.rotation.y = -Math.atan2(s.dz, s.dx);
-      const edge = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ color: 0xffffff })); edge.scale.set(1, 0.06, 1.2); edge.position.y = 0.5; m.add(edge);
+      // Atlas's glass: pale tinted panes with a bright rim (5 panes make the curve)
+      const glass = TEAMC[s.team].clone().lerp(new THREE.Color('#e8fbff'), 0.6);
+      m = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ color: glass, map: ht, transparent: true, opacity: 0.42, depthWrite: false, blending: THREE.AdditiveBlending }));
+      m.scale.set(s.L + 0.12, s.maxY, 0.22);
+      const edge = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ color: 0xffffff })); edge.scale.set(1, 0.05, 1.4); edge.position.y = 0.5; m.add(edge);
+      const rim = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ color: TEAMC[s.team] })); rim.scale.set(1, 0.04, 1.5); rim.position.y = -0.48; m.add(rim);
       scene.add(m); segMeshes.set(s.id, m);
     }
-    m.material.opacity = s.life < 1 ? 0.45 * s.life * (0.6 + 0.4 * Math.sin(perfNow() * 0.03)) : 0.45;
+    m.position.set((s.ax + s.bx) / 2, s.maxY / 2, (s.az + s.bz) / 2); m.rotation.y = -Math.atan2(s.dz, s.dx);   // panes move while the barrier surges
+    m.material.opacity = s.life < 1 ? 0.42 * s.life * (0.6 + 0.4 * Math.sin(perfNow() * 0.03)) : 0.42;
   }
   for (const [id, m] of segMeshes) if (!seenS.has(id)) { scene.remove(m); segMeshes.delete(id); }
 }
@@ -3563,7 +3947,7 @@ function lobbyClick(e) {
   if (slot) { LOBBY.sel = [+slot.dataset.t, +slot.dataset.i]; renderLobby(); return; }
   if (hp) { const s = LOBBY.teams[LOBBY.sel[0]][LOBBY.sel[1]]; if (s.type !== 'empty') { s.hero = hp.dataset.h; renderLobby(); } }
 }
-function randomHero(i) { const pref = [['blaze', 'zip', 'volt', 'nova'], ['bulwark', 'nova', 'volt', 'blaze', 'bumper'], ['atlas', 'bulwark', 'bumper']][i]; return pref[(Math.random() * pref.length) | 0]; }
+function randomHero(i) { const pref = [['blaze', 'zip', 'volt', 'nova', 'rocket', 'spike'], ['bulwark', 'nova', 'volt', 'blaze', 'bumper', 'bubble', 'spike'], ['atlas', 'bulwark', 'bumper', 'bubble']][i]; return pref[(Math.random() * pref.length) | 0]; }
 $('lobby').addEventListener('click', lobbyClick);
 $('heroPick').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); lobbyClick(e); } });
 $('fillBtn').onclick = () => { if (NET.room) { if (NET.role === 'host' && NET.lobby && NET.lobby.phase === 'lobby') { NET.lobby.slots.forEach(t => t.forEach((s, i) => { if (s.type === 'empty') t[i] = { type: 'bot', hero: randomHero(i), diff: LOBBY.diff }; })); netBroadcastLobby(); } return; } LOBBY.teams.forEach(t => t.forEach((s, i) => { if (s.type === 'empty') t[i] = { type: 'bot', hero: randomHero(i), diff: LOBBY.diff }; })); renderLobby(); };
@@ -3629,6 +4013,7 @@ function clearMatch() {
   for (const [, m] of projMeshes) scene.remove(m); projMeshes.clear();
   for (const [, m] of segMeshes) scene.remove(m); segMeshes.clear();
   for (const [, m] of bumperMeshes) scene.remove(m); bumperMeshes.clear();
+  for (const [, m] of bubbleMeshes) scene.remove(m); bubbleMeshes.clear(); chainMesh.count = 0;
   for (const [, m] of itemMeshes) scene.remove(m); itemMeshes.clear();
   padMeshes.forEach(m => scene.remove(m.g)); padMeshes = [];
   towerMeshes.forEach(m => scene.remove(m.g)); towerMeshes = [];
@@ -4078,10 +4463,12 @@ function netSnapshot(sim) {
       p.atk ? [p.atk.type, r(p.atk.t), p.atk.combo | 0, p.atk.dash ? r(p.atk.dash.dur) : 0, r(p.atk.activeEnd || 0), r(p.atk.end || 0), r(p.atk.charge || 0), p.atk.aerial ? 1 : 0, p.atk.dash ? r(p.atk.dash.top) : 0, p.atk.dash && p.atk.dash.air ? 1 : 0, r(p.atk.fx), r(p.atk.fz), p.atk.dashDone ? 1 : 0] : 0,
       p.charge ? [p.charge.type, r(p.charge.t), p.charge.yaw != null ? r(p.charge.yaw) : null] : 0, p.skill ? [p.skill.id, r(p.skill.t || 0), r(p.skill.fx || 0), r(p.skill.fz || 0), r(p.skill.dur || 0), p.skill.lockMove ? 1 : 0] : 0,
       [p.stats.goals, p.stats.assists, p.stats.kos, p.stats.deaths, p.stats.saves, p.stats.parries, p.stats.towers, Math.round(p.stats.dmg)],
-      [p.jumps | 0, r(p.comboT || 0), p.combo | 0, r(p.lockT || 0), r(p.slowT || 0), p.intangible ? 1 : 0, r(p.stamRegenT || 0), r(p.suitT || 0)]]),
-    pr: sim.projs.map(q => [q.id, q.type, q.team, r(q.x), r(q.y), r(q.z), r(q.vx), r(q.vy), r(q.vz)]),
+      [p.jumps | 0, r(p.comboT || 0), p.combo | 0, r(p.lockT || 0), r(p.slowT || 0), p.intangible ? 1 : 0, r(p.stamRegenT || 0), r(p.suitT || 0), p.suitKind === 'bubble' ? 2 : p.suitKind === 'bumper' ? 1 : 0, p.hovering ? 1 : 0]]),
+    pr: sim.projs.map(q => [q.id, q.type, q.team, r(q.x), r(q.y), r(q.z), r(q.vx), r(q.vy), r(q.vz), q.owner == null ? -1 : q.owner]),
     ds: sim.dynSegs.map(s => [s.id, r(s.ax), r(s.az), r(s.bx), r(s.bz), r(s.life), s.team, r(s.maxY)]),
-    bm: sim.bumpers.map(q => [q.id, q.team, r(q.x), r(q.z), r(q.life), q.owner]),
+    bm: sim.bumpers.map(q => [q.id, q.team, r(q.x), r(q.z), r(q.life), q.owner, r(q.y || 0), q.fly ? 1 : 0]),
+    bu: sim.bubbles.map(q => [q.id, q.team, r(q.x), r(q.y), r(q.z), r(q.life), q.owner]),
+    ef: sim.effects.filter(e => e.type === 'pull').map(e => [e.owner, e.kind === 'b' ? -1 : e.id]),
     it: sim.items.map(i => [i.id, i.type, r(i.x), r(i.y), r(i.z), r(i.gy), i.landed ? 1 : 0, r(i.life), i.goal ? 1 : 0]),
     pd: sim.pads.map(p => p.active ? 0 : r(p.t)),
     tw: sim.towers.map(t => [t.team, r(t.hp), t.alive ? 1 : 0, r(t.cd), r(t.aimYaw)])
@@ -4106,13 +4493,15 @@ function netApply(sim, s) {
     p.charge = a[25] ? { type: a[25][0], t: a[25][1], yaw: a[25][2] != null ? a[25][2] : null } : null;
     p.skill = a[26] ? { id: a[26][0], t: a[26][1], fx: a[26][2], fz: a[26][3], dur: a[26][4], lockMove: !!a[26][5], hit: new Set(), hitT: new Set(), ball: true, fired: true, hop: a[26][0] === 'uppercut' && a[26][1] >= 0.24, nextHit: 99, n: 5 } : null;
     const st = a[27]; Object.assign(p.stats, { goals: st[0], assists: st[1], kos: st[2], deaths: st[3], saves: st[4], parries: st[5], towers: st[6], dmg: st[7] });
-    if (a[28]) { p.jumps = a[28][0]; p.comboT = a[28][1]; p.combo = a[28][2]; p.lockT = a[28][3]; p.slowT = a[28][4]; p.intangible = !!a[28][5]; p.stamRegenT = a[28][6]; p.suitT = a[28][7] || 0; }
+    if (a[28]) { p.jumps = a[28][0]; p.comboT = a[28][1]; p.combo = a[28][2]; p.lockT = a[28][3]; p.slowT = a[28][4]; p.intangible = !!a[28][5]; p.stamRegenT = a[28][6]; p.suitT = a[28][7] || 0; p.suitKind = a[28][8] === 2 ? 'bubble' : a[28][8] === 1 ? 'bumper' : null; p.hovering = !!a[28][9]; }
     if (i !== APP.meId) p.anim.walk += Math.hypot(p.vx, p.vz) * dt * 1.6;
     if (!wasGrounded && p.grounded) p.anim.land = 0.15;
   });
-  sim.projs = s.pr.map(a => ({ id: a[0], type: a[1], team: a[2], x: a[3], y: a[4], z: a[5], vx: a[6], vy: a[7], vz: a[8], r: a[1] === 'wave' ? 2.3 : 0.4, life: 1, hit: new Set() }));
+  sim.projs = s.pr.map(a => ({ id: a[0], type: a[1], team: a[2], x: a[3], y: a[4], z: a[5], vx: a[6], vy: a[7], vz: a[8], owner: a[9] == null ? -1 : a[9], r: a[1] === 'wave' ? 2.3 : a[1] === 'hook' ? 0.55 : a[1] === 'rocket' ? 0.45 : a[1] === 'spike' ? 0.32 : 0.4, life: 1, hit: new Set() }));
   sim.dynSegs = s.ds.map(a => { const dx = a[3] - a[1], dz = a[4] - a[2]; return { id: a[0], ax: a[1], az: a[2], bx: a[3], bz: a[4], dx, dz, L: Math.hypot(dx, dz), minY: 0, maxY: a[7], kind: 'barrier', life: a[5], team: a[6] }; });
-  sim.bumpers = (s.bm || []).map(a => ({ id: a[0], team: a[1], x: a[2], z: a[3], life: a[4], owner: a[5], r: 0.85, h: 1.7, cool: {}, ballT: 0 }));
+  sim.bumpers = (s.bm || []).map(a => ({ id: a[0], team: a[1], x: a[2], z: a[3], life: a[4], owner: a[5], y: a[6] || 0, fly: a[7] ? {} : null, r: 0.85, h: 1.7, cool: {}, ballT: 0 }));
+  sim.bubbles = (s.bu || []).map(a => ({ id: a[0], team: a[1], x: a[2], y: a[3], z: a[4], life: a[5], owner: a[6], r: 2.0, cool: {}, ballT: 0, moveT: 0 }));
+  sim.effects = (s.ef || []).map(a => ({ type: 'pull', owner: a[0], kind: a[1] < 0 ? 'b' : 'p', id: a[1], t: 1 }));
   sim.items = s.it.map(a => ({ id: a[0], type: a[1], x: a[2], y: a[3], z: a[4], gy: a[5], landed: !!a[6], life: a[7], goal: !!a[8], vy: 0 }));
   s.pd.forEach((t, i) => { const pd = sim.pads[i]; if (pd) { pd.active = !t; pd.t = t; } });
   let towerTeams = false;
@@ -4134,10 +4523,10 @@ function netHostFrame(dt) {
 const NET_DUMMY_BALL = { x: 1e4, y: -1e3, z: 1e4, vx: 0, vy: 0, vz: 0, px: 1e4, py: -1e3, pz: 1e4, team: -1, lastTouch: -1, touches: [], grav: null };
 function netPredict(sim, p, inp, live) {
   if (!p.alive || sim.phase === 'halftime' || sim.phase === 'end') return [];
-  const keep = { players: sim.players, ball: sim.ball, towers: sim.towers, projs: sim.projs, effects: sim.effects, items: sim.items, dynSegs: sim.dynSegs, bonus: sim.bonus, bumpers: sim.bumpers };
+  const keep = { players: sim.players, ball: sim.ball, towers: sim.towers, projs: sim.projs, effects: sim.effects, items: sim.items, dynSegs: sim.dynSegs, bonus: sim.bonus, bumpers: sim.bumpers, bubbles: sim.bubbles };
   const evLen = sim.events.length;
   const towerSolids = sim.towers.map(t => Object.assign({}, t, { team: p.team }));   // solid, but never damageable here
-  sim.players = [p]; sim.ball = NET_DUMMY_BALL; sim.towers = towerSolids; sim.projs = []; sim.effects = []; sim.items = []; sim.dynSegs = keep.dynSegs.slice(); sim.bonus = keep.bonus.map(b => b.slice()); sim.bumpers = [];
+  sim.players = [p]; sim.ball = NET_DUMMY_BALL; sim.towers = towerSolids; sim.projs = []; sim.effects = []; sim.items = []; sim.dynSegs = keep.dynSegs.slice(); sim.bonus = keep.bonus.map(b => b.slice()); sim.bumpers = []; sim.bubbles = [];
   let out = [];
   try {
     const dt = STEP, frozen = sim.phase === 'countdown';
@@ -4538,7 +4927,28 @@ function handleEvents(sim) {
       case 'heal': if (p) burst(p.x, p.y + 1.2, p.z, 8, '#7be36b', 2.5, 0.24, 0.9, -2.5, 'plus'); break;
       case 'beam': beamFx(e); SFX.beam(); CAM.shake = Math.max(CAM.shake, 0.4); break;
       case 'projEnd': burst(e.x, e.y, e.z, e.kind === 'tshot' ? 16 : 8, e.kind === 'wave' ? '#ff8fd0' : e.kind === 'tshot' ? [FB.TEAM_COLORS[e.team], '#ffffff'] : '#fff27a', 5, 0.16, 0.35); break;
-      case 'skill': if (p && e.skill === 'uppercut') pillarFx(p.x, p.z, 0xff7a1a, 6, 0.55, 1.3); if (p && e.skill === 'slam') burst(p.x, 0.2, p.z, 8, '#f4f0e6', 4, 0.25, 0.5, 0, 'puff'); if (p && e.skill === 'blink') burst(p.x, p.y + 1, p.z, 6, '#d8ffd0', 3, 0.3, 0.45, 0, 'puff'); if (p && e.skill === 'grav') ringFx(p.x, p.z, 0x9b7bff, 14, 0.6, 0.3); if (p && e.skill === 'blink') burst(p.x, p.y + 1, p.z, 14, '#7be36b', 4, 0.15, 0.4, 0); if (p && e.skill === 'barrier') SFX.tone(300, 0.3, 'triangle', 0.2, 600); if (p && e.skill === 'bumpers') SFX.boing(2); if (p && e.skill === 'suit') { SFX.tone(200, 0.4, 'sine', 0.3, 520); ringFx(p.x, p.z, 0xff4d6d, 4, 0.4, 1); if (e.id === APP.meId) feed('Bumper Suit on: 15s'); } break;
+      case 'skill': if (p && e.skill === 'uppercut') pillarFx(p.x, p.z, 0xff7a1a, 6, 0.55, 1.3); if (p && e.skill === 'slam') burst(p.x, 0.2, p.z, 8, '#f4f0e6', 4, 0.25, 0.5, 0, 'puff'); if (p && e.skill === 'blink') burst(p.x, p.y + 1, p.z, 6, '#d8ffd0', 3, 0.3, 0.45, 0, 'puff'); if (p && e.skill === 'grav') ringFx(p.x, p.z, 0x9b7bff, 14, 0.6, 0.3); if (p && e.skill === 'blink') burst(p.x, p.y + 1, p.z, 14, '#7be36b', 4, 0.15, 0.4, 0); if (p && e.skill === 'barrier') SFX.tone(300, 0.3, 'triangle', 0.2, 600); if (p && e.skill === 'bumpers') SFX.boing(2); if (p && e.skill === 'suit') { SFX.tone(200, 0.4, 'sine', 0.3, 520); ringFx(p.x, p.z, 0xff4d6d, 4, 0.4, 1); if (e.id === APP.meId) feed('Bumper Suit on: 3s'); }
+        if (p && e.skill === 'bshield') { SFX.tone(520, 0.4, 'sine', 0.25, 900); ringFx(p.x, p.z, 0x8fd3ff, 4, 0.4, 1); if (e.id === APP.meId) feed('Bubble Shield on: 15s'); }
+        if (p && e.skill === 'bubble') SFX.tone(700, 0.25, 'sine', 0.2, 1300);
+        if (p && e.skill === 'rocket') { SFX.burst(0.25, 900, 0.35); SFX.tone(180, 0.3, 'sawtooth', 0.12, 90); }
+        if (p && e.skill === 'thrust') { SFX.burst(0.6, 600, 0.5); burst(p.x, p.y + 1, p.z, 16, ['#ffb347', '#ffffff', '#ff6b3d'], 6, 0.3, 0.5, 0, 'puff'); if (e.id === APP.meId) CAM.shake = 0.3; }
+        if (p && e.skill === 'grapple') SFX.tone(420, 0.15, 'square', 0.12, 200);
+        break;
+      case 'wallSlam': { const m = APP.models[e.id]; if (m) m.flash = 0.2; impactFx(e.x, e.y, e.z, '#ffffff', 4.5); burst(e.x, e.y, e.z, 18, ['#ffffff', '#ffd23f', '#ff5d8f'], 9, 0.22, 0.5, 6, 'star'); burst(e.x, e.y, e.z, 10, '#e8e2d6', 4, 0.35, 0.6, 0, 'puff');
+        SFX.shatter(); SFX.hit(18); dmgNumber(e.x, e.y + 1.4, e.z, 'WALL SLAM! ' + Math.round(e.dmg), '#ffd23f');
+        if (e.id === APP.meId || e.by === APP.meId) { CAM.shake = 0.8; rumble(1, 0.8, 260); }
+        feed(`${nameOf(e.by)} slammed ${nameOf(e.id)} into the wall (${Math.round(e.dmg)})`); break; }
+      case 'wallBoost': burst(e.x, e.y, e.z, 8, ['#ffffff', '#bff0ff'], 6, 0.2, 0.3, 0, 'star'); SFX.tone(340, 0.12, 'triangle', 0.18, 700); break;
+      case 'shoulder': impactFx(e.x, e.y, e.z, '#4fc1a6', 3); burst(e.x, e.y, e.z, 12, ['#ffffff', '#dfe6f5'], 7, 0.2, 0.4, 0, 'star'); SFX.hit(12); break;
+      case 'bumperLand': { burst(e.x, 0.3, e.z, 10, ['#ffffff', '#ff4d6d', '#ffe14d'], 5, 0.22, 0.4, 0, 'puff'); SFX.boing(1); const bm = bumperMeshes.get(e.bid); if (bm) bm.userData.squash = 1; break; }
+      case 'bubbleBounce': { const bm = bubbleMeshes.get(e.bid); if (bm) bm.userData.squash = 1; burst(e.x, e.y, e.z, 8, ['#ffffff', '#bfeaff'], 6, 0.18, 0.35, 0, 'star'); SFX.boing(e.ball ? 9 : 5); if (e.id === APP.meId) { CAM.shake = 0.3; rumble(0.4, 0.3, 100); } break; }
+      case 'bubblePop': burst(e.x, e.y, e.z, 24, ['#ffffff', '#bfeaff', '#8fd3ff'], 8, 0.22, 0.5, 0, 'star'); SFX.tone(900, 0.12, 'sine', 0.2, 1500); break;
+      case 'explode': impactFx(e.x, e.y, e.z, '#ffb347', 6); ringFx(e.x, e.z, 0xff6b3d, e.r * 1.4, 0.35, Math.max(0.2, e.y - 1)); burst(e.x, e.y, e.z, 26, ['#ffb347', '#ff6b3d', '#ffe14d', '#ffffff'], 11, 0.3, 0.5, 2, 'puff'); burst(e.x, e.y, e.z, 12, '#5a5566', 4, 0.5, 0.9, -2, 'puff');
+        SFX.burst(0.5, 400, 0.7); SFX.tone(70, 0.4, 'sawtooth', 0.25, 40); { const me = APP.sim.players[APP.meId]; if (me && Math.hypot(me.x - e.x, me.z - e.z) < 14) { CAM.shake = 0.5; rumble(0.7, 0.6, 180); } } break;
+      case 'hooked': SFX.tone(240, 0.12, 'square', 0.2, 120); burst(e.x, e.y, e.z, 8, '#e8edf5', 5, 0.15, 0.3, 0, 'star'); if (e.target === APP.meId) feed('Grappled!'); break;
+      case 'spikeHit': impactFx(e.x, e.y, e.z, '#e8edf5', 3); burst(e.x, e.y, e.z, 14, ['#ffffff', '#cfd6e2', '#ff5d8f'], 8, 0.18, 0.35, 4, 'star'); SFX.hit(14); break;
+      case 'spikeCombo': dmgNumber(e.x, e.y + 1, e.z, 'SPIKE COMBO!', '#ff5d8f'); SFX.tone(880, 0.2, 'square', 0.15, 1300); break;
+      case 'spikeThrow': SFX.tone(600 + e.n * 120, 0.06, 'triangle', 0.12, 900); break;
       case 'save': ANN.say(Math.random() < 0.5 ? 'What a save!' : `Save by ${sayName(e.id)}!`, 2); announce('SAVE!', e.shooter >= 0 ? `${nameOf(e.id)} stops ${nameOf(e.shooter)}'s shot` : `${nameOf(e.id)} with the save`, '#7fd3ff'); feed(`${nameOf(e.id)} with the save!`); if (e.x !== undefined) impactFx(e.x, e.y, e.z, '#7fd3ff', 4); break;
       case 'parry':
         burst(e.x, e.y, e.z, 36, ['#ffd23f', '#ffffff', '#fff27a'], 10, 0.22, 0.7); ringFx(e.x, e.z, 0xffd23f, 4, 0.35, e.y); impactFx(e.x, e.y, e.z, '#ffd23f', 6); shockFx(e.x, e.y, e.z, 0xffd23f, 5, 0.35);
@@ -4684,7 +5094,9 @@ function poseHero(m, p, dt, a, t) {
   if (p.skill) {
     angry = true;
     const id = p.skill.id, st = p.skill.t || 0;
-    if (id === 'bash') { B.rotation.z = -0.55; fl.x += 0.55 * s; fl.z *= 0.6; }
+    if (id === 'bash') { const sh = (p.skill.dur || 0.6) - st < 0.16; B.rotation.z = sh ? -0.75 : -0.55; if (sh) { B.rotation.y = 0.7; fl.x += 0.9 * s; } else { fl.x += 0.55 * s; } fl.z *= 0.6; }
+    else if (id === 'thrust') { B.rotation.z = -0.9; ftL.x -= 0.4 * s; ftR.x -= 0.4 * s; fl.x += 0.5 * s; fR.x += 0.5 * s; openMouth = true; }
+    else if (id === 'spikes') { const k = Math.abs(Math.sin(st * 21)); fR.x += k * 0.8 * s; fR.y += 0.3 * s; }
     else if (id === 'slam') { B.rotation.z = st < 0.4 ? -st * 8 : -0.6; ftL.y += 0.35; ftR.y += 0.35; fl.y += 0.6 * s; fR.y += 0.6 * s; fl.x += 0.3 * s; fR.x += 0.3 * s; }
     else if (id === 'flurry') {
       const k = Math.abs(Math.sin(st * 28)), f = Math.sin(st * 14) > 0 ? fl : fR; f.x += k * 1.0 * s; f.y += 0.15 * s; B.rotation.z = -0.22; openMouth = true;
@@ -4725,7 +5137,7 @@ function poseHero(m, p, dt, a, t) {
   if (E.coil) { const k = 0.6 + 0.4 * Math.sin(t * 9); E.coil.material.color.setRGB(0.27 * k, 0.94 * k, 1 * k); if (E.orb) E.orb.scale.setScalar(0.09 * s * (0.8 + 0.4 * k)); }
   if (E.wind) { E.wind.visible = !!(p.skill && p.skill.id === 'cyclone'); if (E.wind.visible) { E.wind.rotation.y -= dt * 20; E.wind.material.map.offset.x += dt * 2; E.wind.material.opacity = 0.85; } }
   // trails
-  const dashing = (p.atk && p.atk.dash && p.atk.t < (p.atk.activeEnd || 0)) || (p.skill && ['bash', 'uppercut', 'blink', 'slam', 'cyclone'].includes(p.skill.id)) || (p.stunT > 0.3 && sp > 14);
+  const dashing = (p.atk && p.atk.dash && p.atk.t < (p.atk.activeEnd || 0)) || (p.skill && ['bash', 'uppercut', 'blink', 'slam', 'cyclone', 'thrust'].includes(p.skill.id)) || (p.stunT > 0.3 && sp > 14);
   if ((dashing || fistTrail) && dt > 0) {
     g.updateMatrixWorld(true);
     if (dashing) {
@@ -4737,9 +5149,14 @@ function poseHero(m, p, dt, a, t) {
     if (fistTrail) { fistTrail.getWorldPosition(_pw); trailPush('f' + p.id, _pw.x, _pw.y, _pw.z, p.atk && p.atk.charge > 0.7 ? '#ff5d8f' : '#ffffff', 0.2 * s, 0.13); }
   }
   m.stars.visible = p.dizzyT > 0; if (m.stars.visible) m.stars.rotation.y = t * 6;
+  if (E.jets) {
+    const on = p.hovering || (p.skill && p.skill.id === 'thrust');
+    E.jets.forEach((j, i) => { j.visible = on; if (on) { const big = p.skill && p.skill.id === 'thrust' ? 1.8 : 1; j.scale.set(1, big * (0.75 + 0.35 * Math.sin(t * 50 + i * 2)), 1); } });
+    if (on && dt > 0) { g.updateMatrixWorld(true); _pw.copy(E.jets[0].position); B.localToWorld(_pw); burst(_pw.x, _pw.y - 0.3, _pw.z, 1, ['#ffb347', '#ffffff', '#ff6b3d'], 2, 0.22, 0.3, 2, 'puff'); }
+  }
   if (E.suit) {
     const on = p.suitT > 0; E.suit.visible = on;
-    if (on) { const k = 1 + Math.sin(t * 7) * 0.04 + (m.flash > 0 ? 0.1 : 0); E.suit.scale.set(k, 2 - k, k); E.suitMesh.material.opacity = p.suitT < 2 ? 0.32 * (0.5 + 0.5 * Math.sin(t * 20)) : 0.32; E.suit.rotation.y = t * 0.8; }
+    if (on) { const k = 1 + Math.sin(t * 7) * 0.04 + (m.flash > 0 ? 0.1 : 0); E.suit.scale.set(k, 2 - k, k); E.suitMesh.material.opacity = p.suitT < (p.suitKind === 'bumper' ? 0.8 : 2) ? 0.32 * (0.5 + 0.5 * Math.sin(t * 20)) : 0.32; E.suit.rotation.y = t * 0.8; }
     if (E.spring) E.spring.scale.y = 1 + Math.sin(t * 9) * 0.15;
   }
   m.bubble.visible = p.shielding;
@@ -4813,6 +5230,8 @@ function frame(now) {
     syncProjectiles(sim);
     updateAimArrow(sim, t);
     syncBumpers(sim, APP.paused ? 0 : dt);
+    syncBubbles(sim, APP.paused ? 0 : dt, t);
+    syncChains(sim);
     syncItems(sim, t);
     syncPads(sim, t);
     syncTowers(sim, t, APP.paused ? 0 : dt);
