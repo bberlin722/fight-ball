@@ -2390,6 +2390,40 @@ scene.add(sun);
    Arena
    =================================================================== */
 const MAP = FB.MAPS.grandPitch();
+const WALL_DANGER = [];
+const DANGER_TEX = canvasTex(256, 128, (g, w, h) => {
+  const gr = g.createLinearGradient(0, h, 0, 0); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'destination-out'; g.fillStyle = 'rgba(0,0,0,.55)';
+  for (let x = -h; x < w + h; x += 64) { g.beginPath(); g.moveTo(x, h); g.lineTo(x + 32, h); g.lineTo(x + 32 + h, 0); g.lineTo(x + h, 0); g.closePath(); g.fill(); }   // hazard stripes
+  g.globalCompositeOperation = 'source-over'; g.fillStyle = 'rgba(255,255,255,1)'; g.fillRect(0, h - 8, w, 8);
+});
+DANGER_TEX.wrapS = THREE.RepeatWrapping;
+/* Each frame: the wall strip near you (or the hero you're spectating) glows red and blinks faster the closer you are;
+   anyone flying fast toward a wall (knocked back) lights it up too. */
+function updateWallDanger(sim, t) {
+  const focusId = sim && sim.players[APP.meId] ? APP.meId : (APP.specId >= 0 ? APP.specId : -1);
+  for (const w of WALL_DANGER) {
+    let k = 0;
+    if (sim) for (const p of sim.players) {
+      if (!p.alive) continue;
+      const c = FB.geo.closestOnSeg(w.s, p.x, p.z), dx = p.x - c[0], dz = p.z - c[1], d = Math.max(0, Math.hypot(dx, dz) - p.r);
+      if (p.id === focusId) k = Math.max(k, U.clamp(1 - d / 6, 0, 1));
+      const toward = -(p.vx * dx + p.vz * dz) / (Math.hypot(dx, dz) || 1);
+      if (toward > 12 && d < 7) k = Math.max(k, U.clamp(1 - d / 7, 0, 1) * Math.min(1, toward / 20));
+    }
+    w.k += (k - w.k) * 0.25;
+    if (w.k < 0.02) { w.m.visible = false; continue; }
+    const rate = 2 + 9 * w.k, blink = 0.5 + 0.5 * Math.sin(t * rate * Math.PI * 2);
+    w.m.visible = true; w.m.material.opacity = w.k * (0.3 + 0.7 * blink);
+    w.m.material.map.offset.x = -t * (0.2 + 0.8 * w.k);
+  }
+}
+function insideArenaPt(x, z) {   // same test the sim uses: ray-cast against the boundary
+  let c = 0;
+  for (const s of MAP.segs) { if (s.kind === 'cross') continue; if ((s.az > z) !== (s.bz > z)) { const xi = s.ax + (z - s.az) * (s.bx - s.ax) / (s.bz - s.az); if (xi > x) c++; } }
+  return c % 2 === 1;
+}
 const arena = { goalMats: {} };
 function buildArena() {
   const W = 2 * (C.HL + C.GD), D = 2 * C.HW;
@@ -2438,6 +2472,13 @@ function buildArena() {
   MAP.segs.forEach((s, i) => {
     const a = Math.atan2(s.dz, s.dx), mx = (s.ax + s.bx) / 2, mz = (s.az + s.bz) / 2, h = s.maxY - s.minY;
     const grp = new THREE.Group(); grp.position.set(mx, s.minY, mz); grp.rotation.y = -a; scene.add(grp);
+    if (s.kind !== 'cross') {   // red danger strip on the arena side of every wall: fades in and blinks faster as players get close
+      const nx = -Math.sin(a), nz = Math.cos(a), side = insideArenaPt(mx + nx * 1.2, mz + nz * 1.2) ? 1 : -1;
+      const dm = new THREE.Mesh(new THREE.PlaneGeometry(s.L, Math.min(3.2, h)), new THREE.MeshBasicMaterial({ map: DANGER_TEX, color: 0xff2a3d, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+      dm.material.map = DANGER_TEX.clone(); dm.material.map.needsUpdate = true; dm.material.map.repeat.set(Math.max(1, s.L / 3), 1);
+      dm.position.set(0, Math.min(3.2, h) / 2 + 0.02, side * 0.32); dm.visible = false; dm.renderOrder = 3; grp.add(dm);
+      WALL_DANGER.push({ s, m: dm, k: 0 });
+    }
     if (s.kind === 'goal') {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(s.L, h), net.clone()); m.material.map = net.map.clone(); m.material.map.needsUpdate = true;
       m.material.map.repeat.set(s.L / 1.2, h / 1.2); m.position.y = h / 2; grp.add(m); return;
@@ -4131,6 +4172,7 @@ function startMatch(roster, opts) {
   if (me && !PAD.using) tryLock();
 }
 function clearMatch() {
+  for (const w of WALL_DANGER) { w.k = 0; w.m.visible = false; }
   aimArrow.g.visible = false; kickArc.g.visible = false;
   APP.models.forEach(m => scene.remove(m.g)); APP.models = [];
   for (const [, m] of projMeshes) scene.remove(m); projMeshes.clear();
@@ -5355,6 +5397,7 @@ function frame(now) {
     if (bs > 12 && !APP.paused && bp.team >= 0) { const tc = FB.TEAM_COLORS[bp.team]; burst(bx, by, bz, 1 + Math.round(bp.k * 3), [tc, '#ffffff'], 1.5, 0.3 + 0.35 * bp.k, 0.3 + 0.2 * bp.k, 0); }
     gravFx.visible = b.grav != null; if (gravFx.visible) { gravFx.position.set(bx, by, bz); gravFx.rotation.x = t * 3; gravFx.rotation.y = t * 4; if (!APP.paused) for (let i = 0; i < 3; i++) { const a2 = Math.random() * 6.28, r = 3 + Math.random() * 1.5; PS.glow.add({ x: bx + Math.cos(a2) * r, y: by + (Math.random() - 0.5) * 2, z: bz + Math.sin(a2) * r, vx: -Math.cos(a2) * r * 3.5 - Math.sin(a2) * 6, vy: 0, vz: -Math.sin(a2) * r * 3.5 + Math.cos(a2) * 6, life: 0.28, max: 0.28, size: 0.4, c: rgbOf('#c9b5ff'), g: 0, rot: 0, vr: 0 }); } }
     syncProjectiles(sim);
+    updateWallDanger(sim, t);
     updateAimArrow(sim, t);
     syncBumpers(sim, APP.paused ? 0 : dt);
     syncBubbles(sim, APP.paused ? 0 : dt, t);
