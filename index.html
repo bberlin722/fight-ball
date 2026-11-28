@@ -139,6 +139,11 @@ button:disabled{opacity:.5;cursor:not-allowed;transform:none}
 #ko b{font-family:"Luckiest Guy";font-weight:400;font-size:34px;color:#ff5468;display:block}
 #hint{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);font:800 13px Nunito;color:#fff;text-shadow:0 1px 0 var(--ink),0 0 6px rgba(0,0,0,.5);white-space:nowrap}
 #help{position:absolute;right:16px;bottom:16px;background:rgba(255,253,246,.94);border:3px solid var(--ink);border-radius:14px;padding:10px 14px;font:700 13px/1.7 Nunito;box-shadow:0 4px 0 var(--ink)}
+#tut{position:absolute;right:12px;top:196px;width:min(400px,92vw);background:rgba(255,253,246,.96);border:3px solid var(--ink);border-radius:16px;padding:10px 14px 10px;box-shadow:0 5px 0 var(--ink);font:700 14px/1.5 Nunito;pointer-events:auto;z-index:5}
+#tut .tt{display:flex;justify-content:space-between;align-items:baseline;gap:8px}#tut .tt b{font-family:"Luckiest Guy";font-size:22px;color:var(--ink);letter-spacing:.5px}#tut .tt span{font:900 12px Nunito;color:var(--mute);text-transform:uppercase}
+#tut p{margin:4px 0 8px}#tut kbd{background:#fff;border:2px solid var(--ink);border-radius:6px;padding:0 5px;font:900 12px Nunito}
+#tut .tbar{height:10px;border:2px solid var(--ink);border-radius:6px;background:#3a3550;overflow:hidden;margin-bottom:8px}#tut .tbar i{display:block;height:100%;background:#7be36b;transition:width .2s}
+#tut .tb{display:flex;align-items:center;gap:8px;flex-wrap:wrap}#tut .tb button{min-height:32px;padding:3px 12px;font-size:13px}#tut .tb small{margin-left:auto;color:var(--mute);font:800 12px Nunito}
 #help kbd{background:#fff;border:2px solid var(--ink);border-radius:6px;padding:0 5px;font:900 11px Nunito}
 
 /* ---------- Overlays ---------- */
@@ -214,7 +219,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tog{min-width:64px;min-height:32px;padding:2px 10px;border-width:2px;box-shadow:0 3px 0 var(--ink)}.tog.on{background:#7be36b}
 @media(prefers-reduced-motion:reduce){.bind.listen{animation:none}}
 .final{font-family:"Luckiest Guy";font-size:64px;line-height:1}
-@media(max-width:700px){.roster{gap:40px;top:80px}#mini{display:none}.abil .ab{width:54px;height:54px}.me{width:46vw}#help{display:none}#feed{top:120px}}
+@media(max-width:700px){.roster{gap:40px;top:80px}#mini{display:none}.abil .ab{width:54px;height:54px}.me{width:46vw}#help{display:none}#feed{top:120px}#tut{top:auto;bottom:150px;right:50%;transform:translateX(50%)}}
 </style>
 </head>
 <body>
@@ -227,6 +232,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <div class="tag">3v3 brawl-soccer &middot; Forward, Defender, Goalie</div>
     <div class="tag" id="padTag">Controller: press any button</div>
     <div class="modes">
+      <button id="tutBtn">Tutorial</button>
       <button id="ctlBtn">Controls</button>
       <button class="on" id="modeLocal">Local match</button>
     </div>
@@ -287,6 +293,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <div class="abil" id="abil"></div>
   <div id="hint"></div>
   <div id="help" class="hidden"><div id="helpBody"></div></div>
+  <div id="tut" class="hidden"></div>
 </div>
 
 <div id="pause" class="ov hidden"><div class="card">
@@ -2645,11 +2652,14 @@ function jerseyTex(heroId, team, num) {
   const key = heroId + team + num; if (jerseyCache[key]) return jerseyCache[key];
   const H = HEROES[heroId];
   return (jerseyCache[key] = canvasTex(256, 128, (g, w, h) => {
-    g.fillStyle = H.color; g.fillRect(0, 0, w, h);
-    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(255,255,255,.18)'); gr.addColorStop(1, 'rgba(0,0,0,.18)'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
-    g.fillStyle = H.accent; for (const u of [0, 0.5]) g.fillRect(u * w - 7, 0, 14, h);
-    g.fillStyle = FB.TEAM_COLORS[team]; g.fillRect(0, h * 0.26, w, h * 0.14);
-    g.fillStyle = '#ffffff'; g.fillRect(0, h * 0.24, w, h * 0.025); g.fillRect(0, h * 0.4, w, h * 0.025);
+    // the jersey body is the team color (Blue / Orange); the hero's own color shows on the side panels and the collar band
+    const tc = FB.TEAM_COLORS[team];
+    g.fillStyle = tc; g.fillRect(0, 0, w, h);
+    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(255,255,255,.22)'); gr.addColorStop(1, 'rgba(0,0,0,.2)'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.fillStyle = H.color; for (const u of [0, 0.5]) g.fillRect(u * w - 13, 0, 26, h);
+    g.fillStyle = H.accent; for (const u of [0, 0.5]) { g.fillRect(u * w - 15, 0, 3, h); g.fillRect(u * w + 12, 0, 3, h); }
+    g.fillStyle = '#ffffff'; g.fillRect(0, h * 0.2, w, h * 0.05); g.fillRect(0, h * 0.86, w, h * 0.04);
+    g.fillStyle = H.color; g.fillRect(0, 0, w, h * 0.2);
     g.font = '52px "Luckiest Guy", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.lineWidth = 7; g.strokeStyle = '#1b1733'; g.strokeText(num, w * 0.75, h * 0.64); g.fillStyle = '#ffffff'; g.fillText(num, w * 0.75, h * 0.64);
     g.save(); g.translate(w * 0.25, h * 0.6); g.fillStyle = '#ffffff'; g.beginPath();
@@ -3483,7 +3493,7 @@ addEventListener('keydown', e => {
     if ((e.code === 'Escape' || kbIs('pause', e.code)) && performance.now() - (APP.lockLostT || 0) > 300) togglePause();
     if (kbIs('ballcam', e.code)) toggleBallCam();
     if (kbIs('mute', e.code)) toggleMute();
-    if (kbIs('help', e.code)) $('help').classList.toggle('hidden');
+    if (TUT.on && (e.code === 'Enter' || e.code === 'NumpadEnter')) tutSkip();
   }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
@@ -3975,6 +3985,117 @@ function buildPreview() {
    =================================================================== */
 const APP = { state: 'lobby', paused: false, sim: null, ctrls: [], models: [], meId: -1, acc: 0, roster: null, endT: 0, banner: { t: 0 } };
 
+/* ===================================================================
+   Interactive tutorial: a practice pitch with a training dummy and a list of goals
+   =================================================================== */
+const TUT = { on: false, i: 0, prog: 0, done: false, yaw0: 0, yawAcc: 0, lastYaw: 0, mv: 0, lx: 0, lz: 0 };
+const kb = a => `<kbd>${bindText(a) || '—'}</kbd>`;
+const moveKeys = () => PAD.using ? '<kbd>left stick</kbd>' : `${kb('moveF')}${kb('moveL')}${kb('moveB')}${kb('moveR')}`;
+const camKeys = () => PAD.using ? '<kbd>right stick</kbd>' : '<kbd>mouse</kbd>';
+function tutBallAhead(dist) {
+  const sim = APP.sim, me = sim.players[APP.meId], b = sim.ball, a = CAM.yaw;
+  b.x = me.x + Math.cos(a) * dist; b.z = me.z + Math.sin(a) * dist; b.y = C.BALL_R; b.vx = b.vy = b.vz = 0; b.team = -1; b.lastTouch = -1;
+  b.px = b.x; b.py = b.y; b.pz = b.z;
+}
+const TUT_STEPS = [
+  { t: 'Move', d: () => `Walk around with ${moveKeys()}.`, goal: 8, test: (me, dt) => { const m = Math.hypot(me.x - TUT.lx, me.z - TUT.lz); TUT.lx = me.x; TUT.lz = me.z; return m < 2 ? m : 0; } },
+  { t: 'Look around', d: () => `Turn the camera with ${camKeys()}${PAD.using ? '' : ` (or ${kb('camL')}${kb('camR')})`}.`, goal: 2.5, test: () => { const d = Math.abs(U.angDiff(TUT.lastYaw, CAM.yaw)); TUT.lastYaw = CAM.yaw; return d; } },
+  { t: 'Jump', d: () => `Press ${kb('jump')} to jump.`, ev: e => e.type === 'jump' },
+  { t: 'Double jump', d: () => `Press ${kb('jump')} again in the air to double jump.`, ev: e => e.type === 'djump' },
+  { t: 'Sprint', d: () => `Hold ${kb('sprint')} while moving to sprint (it uses stamina, the yellow bar).`, goal: 1.2, test: (me, dt) => me.sprinting ? dt : 0 },
+  { t: 'Punch', d: () => `Tap ${kb('punch')} to throw a quick punch.`, ev: e => e.type === 'swing' && e.atk === 'punch' },
+  { t: 'Charged dash punch', d: () => `Hold ${kb('punch')} until the charge bar is full (100%), then let go. The arrow tip shows how far you'll dash.`, ev: (e, me) => e.type === 'swing' && e.atk === 'punch' && e.charge >= 0.97 },
+  { t: 'Steer a charge', d: () => `Hold ${kb('punch')} and push ${PAD.using ? '<kbd>left stick</kbd>' : 'a direction'} sideways or back: the arrow turns. Release to dash that way.`,
+    ev: (e, me) => e.type === 'swing' && e.atk === 'punch' && me.atk && Math.abs(U.angDiff(Math.atan2(me.atk.fz, me.atk.fx), CAM.yaw)) > 0.7 },
+  { t: 'Kick the ball', d: () => `The ball is in front of you. Walk up and tap ${kb('kick')} for a little chip.`, setup: () => tutBallAhead(5), ev: (e, me) => e.type === 'ballHit' && e.id === APP.meId && me.atk && me.atk.type === 'kick' },
+  { t: 'Power lob', d: () => `Hold ${kb('kick')} until the arc turns gold (100%), then release next to the ball for a big high lob.`, setup: () => tutBallAhead(5),
+    ev: (e, me) => e.type === 'ballHit' && e.id === APP.meId && me.atk && me.atk.type === 'kick' && me.atk.charge >= 0.97 },
+  { t: 'Shield', d: () => `Hold ${kb('shield')} to raise your shield. It blocks hits but drains; if it breaks you're stunned.`, ev: e => e.type === 'shieldUp' },
+  { t: 'Parry', d: () => `The dummy will come and punch you. Tap ${kb('shield')} just as the punch lands to parry and stun it for 3 seconds.`, ev: e => e.type === 'parry' },
+  { t: 'Skill 1', d: me => `Press ${kb('s1')} to use <b>${me.hero.s1.name}</b>: ${me.hero.s1.desc}`, ev: (e, me) => e.type === 'skill' && e.skill === me.hero.s1.id },
+  { t: 'Skill 2', d: me => `Press ${kb('s2')} to use <b>${me.hero.s2.name}</b>: ${me.hero.s2.desc}`, ev: (e, me) => e.type === 'skill' && e.skill === me.hero.s2.id },
+  { t: 'Score a goal', d: () => `Knock the ball into the orange goal. Punches drive it low, kicks lift it. Bounce it off the walls for extra speed.`,
+    setup: () => { const sim = APP.sim, dir = sim.attackDir(0), me = sim.players[APP.meId], b = sim.ball; b.x = dir * (C.HL - 16); b.z = 0; b.y = C.BALL_R; b.vx = b.vy = b.vz = 0; b.px = b.x; b.pz = b.z; me.x = dir * (C.HL - 22); me.z = 0; me.vx = me.vz = 0; CAM.yaw = dir > 0 ? 0 : Math.PI; },
+    ev: e => e.type === 'goal' && e.team === 0 }
+];
+class TutDummy {
+  constructor(sim, id) { this.sim = sim; this.id = id; this.in = FB.emptyInput(); this.next = 0; }
+  getInput() {
+    const sim = this.sim, p = sim.players[this.id], me = sim.players[APP.meId], inp = this.in;
+    inp.mx = inp.mz = 0; inp.punch = false;
+    if (!p || !me || !p.alive) return inp;
+    const step = TUT_STEPS[TUT.i];
+    if (step && step.t === 'Parry') {
+      const dx = me.x - p.x, dz = me.z - p.z, d = Math.hypot(dx, dz);
+      inp.aimYaw = Math.atan2(dz, dx);
+      if (d > 2.4) { inp.mx = dx / d; inp.mz = dz / d; }
+      else if (sim.time > this.next) { inp.punch = true; this.next = sim.time + 1.6; }
+    } else {
+      const hx = 10 * sim.attackDir(0), hz = 8, dx = hx - p.x, dz = hz - p.z, d = Math.hypot(dx, dz);
+      if (d > 1) { inp.mx = dx / d * 0.6; inp.mz = dz / d * 0.6; }
+      inp.aimYaw = Math.atan2(me.z - p.z, me.x - p.x);
+    }
+    return inp;
+  }
+}
+function startTutorial() {
+  SFX.init();
+  const human = LOBBY.teams.flat().find(s => s.type === 'human'), hero = (human && human.hero) || 'blaze';
+  const roster = [{ team: 0, slot: 0, role: 'FWD', hero, name: 'You', isBot: false }, { team: 1, slot: 1, role: 'DEF', hero: 'bulwark', name: 'Training Dummy', isBot: true }];
+  Object.assign(TUT, { on: true, i: 0, prog: 0, done: false, yawAcc: 0 });
+  startMatch(roster, { halfLen: 9999, meId: 0, prep: sim => {
+    sim.towers.length = 0; sim.items.length = 0; sim.itemT = 1e9;
+    for (const p of sim.players) { p.maxHp = p.hp = 99999; }
+  }, ctrls: sim => [new LocalController(), new TutDummy(sim, 1)] });
+  const me = APP.sim.players[0]; TUT.lx = me.x; TUT.lz = me.z; TUT.lastYaw = CAM.yaw;
+  $('tut').classList.remove('hidden'); renderTut();
+}
+function tutNext() {
+  TUT.i++; TUT.prog = 0;
+  if (TUT.i >= TUT_STEPS.length) { TUT.done = true; SFX.whistle(); announce('TUTORIAL COMPLETE', 'You know the basics. Try a Local match or go online!', '#7be36b'); }
+  else {
+    SFX.tone(880, 0.12, 'sine', 0.2, 1320);
+    const st = TUT_STEPS[TUT.i]; if (st.setup && APP.sim) st.setup();
+    const me = APP.sim.players[APP.meId]; TUT.lx = me.x; TUT.lz = me.z; TUT.lastYaw = CAM.yaw;
+  }
+  renderTut();
+}
+function tutSkip() { if (!TUT.on) return; if (TUT.done) { endTutorial(); return; } tutNext(); }
+function endTutorial() { TUT.on = false; $('tut').classList.add('hidden'); toLobby(); }
+function renderTut() {
+  const el = $('tut'); if (!TUT.on || !APP.sim) return;
+  const me = APP.sim.players[APP.meId], n = TUT_STEPS.length;
+  if (TUT.done) {
+    el.innerHTML = `<div class="tt"><b>Tutorial complete!</b><span>${n}/${n}</span></div><p>Nice work. Hold ${kb('scores')} in a match for stats, ${kb('ballcam')} toggles the ball camera, and the Controls button in the lobby lets you rebind anything.</p>
+      <div class="tb"><button id="tutLobby">Back to lobby</button><small>${PAD.using ? '<kbd>D-pad right</kbd>' : '<kbd>Enter</kbd>'} to finish</small></div>`;
+    $('tutLobby').onclick = endTutorial; return;
+  }
+  const st = TUT_STEPS[TUT.i], frac = st.goal ? Math.min(1, TUT.prog / st.goal) : 0;
+  el.innerHTML = `<div class="tt"><b>${st.t}</b><span>Step ${TUT.i + 1}/${n}</span></div><p>${st.d(me)}</p>
+    <div class="tbar"><i style="width:${(TUT.i + frac) / n * 100}%"></i></div>
+    <div class="tb"><button id="tutSkipBtn">Skip step</button><button id="tutExit">Exit tutorial</button><small>${PAD.using ? '<kbd>D-pad right</kbd>' : '<kbd>Enter</kbd>'} skips</small></div>`;
+  $('tutSkipBtn').onclick = tutSkip; $('tutExit').onclick = endTutorial;
+}
+function tutTick(dt) {
+  if (!TUT.on || !APP.sim) return;
+  const sim = APP.sim; sim.clock = sim.halfLen;
+  for (const p of sim.players) if (p.alive) p.hp = p.maxHp;
+  if (TUT.done) return;
+  const st = TUT_STEPS[TUT.i], me = sim.players[APP.meId];
+  if (st && st.test && me && sim.phase === 'play' && !APP.paused) {
+    TUT.prog += st.test(me, dt);
+    if (TUT.prog >= st.goal) tutNext();
+    else { const bar = document.querySelector('#tut .tbar i'); if (bar) bar.style.width = ((TUT.i + Math.min(1, TUT.prog / st.goal)) / TUT_STEPS.length * 100) + '%'; }
+  }
+}
+function tutEvent(e) {
+  if (!TUT.on || TUT.done || !APP.sim) return;
+  const st = TUT_STEPS[TUT.i], me = APP.sim.players[APP.meId];
+  if (!st || !st.ev || !me) return;
+  if (e.id != null && e.id !== APP.meId && e.type !== 'goal') return;
+  if (st.ev(e, me)) tutNext();
+}
+
 function startMatch(roster, opts) {
   opts = opts || {};
   $('restartBtn').classList.remove('hidden'); $('rematchBtn').disabled = false; $('rematchBtn').textContent = 'Rematch'; APP.netMenu = false;
@@ -3990,6 +4111,8 @@ function startMatch(roster, opts) {
   APP.state = 'match';
   buildPreview();
   const sim = APP.sim = new FB.Sim(roster, { halfLen: opts.halfLen || LOBBY.half * 60 });
+  if (opts.prep) opts.prep(sim);
+  if (!opts.prep) { TUT.on = false; $('tut').classList.add('hidden'); }
   APP.meId = opts.meId != null ? opts.meId : roster.findIndex(r => !r.isBot);
   APP.ctrls = opts.ctrls ? opts.ctrls(sim) : roster.map((r, i) => r.isBot ? new FB.BotBrain(sim, i, r.diff || 'normal') : new LocalController());
   APP.models = sim.players.map(p => { const m = buildHero(p.heroId, p.team, p.id === APP.meId, p.slot); scene.add(m.g); return m; });
@@ -4002,7 +4125,7 @@ function startMatch(roster, opts) {
   $('lobby').classList.add('hidden'); $('hud').classList.remove('hidden');
   $('results').classList.add('hidden'); $('pause').classList.add('hidden');
   $('meBox').classList.toggle('hidden', !me); $('abil').classList.toggle('hidden', !me); $('cross').classList.toggle('hidden', !me);
-  $('help').classList.toggle('hidden', !me);
+  $('help').classList.add('hidden');   // the bottom-right controls panel is gone; the Tutorial and Controls screen cover them
   buildHudStatic();
   APP.paused = false; APP.acc = 0; APP.endT = 0;
   if (me && !PAD.using) tryLock();
@@ -4021,6 +4144,7 @@ function clearMatch() {
   $('feed').innerHTML = ''; $('banner').innerHTML = ''; $('joinDlg').classList.add('hidden'); APP.specId = -1;
 }
 function toLobby() {
+  if (TUT.on) { TUT.on = false; $('tut').classList.add('hidden'); }
   ANN.stop();
   APP.netMenu = false; $('pause').querySelector('p').innerHTML = '<span class="kbonly">Click Resume to lock the mouse again.</span><span class="padonly">Press B or Start to resume.</span>';
   clearMatch(); APP.sim = null; APP.state = 'lobby'; APP.paused = false;
@@ -4048,6 +4172,7 @@ $('resumeBtn').onclick = () => togglePause();
 $('restartBtn').onclick = () => { if (NET.inMatch) { if (NET.role === 'host') netStart(); return; } startMatch(APP.roster); };
 $('quitBtn').onclick = () => { if (NET.inMatch) { netQuitMatch(); return; } toLobby(); };
 $('ctlBtn').onclick = openControls;
+$('tutBtn').onclick = () => { if (NET.room) { netStatus('Leave the online room (Solo / Local) to play the tutorial.'); return; } startTutorial(); };
 $('ctlBtn2').onclick = openControls;
 $('rematchBtn').onclick = () => { if (NET.inMatch || NET.room) { if (NET.role === 'host') netStart(); return; } startMatch(APP.roster); };
 $('joinDlg').addEventListener('click', e => {
@@ -4889,6 +5014,7 @@ function drawMini(sim) {
 function handleEvents(sim) {
   const me = sim.players[APP.meId];
   for (const e of sim.events) {
+    if (TUT.on) tutEvent(e);
     const p = e.id != null ? sim.players[e.id] : null;
     switch (e.type) {
       case 'hit': {
@@ -5191,7 +5317,7 @@ function frame(now) {
     const pp = act => (BIND.pad[act] || []).some(padPressed);
     if (pp('pause') || ((BIND.pad.pause || []).length === 0 && padPressed(PB.START))) togglePause();
     if (pp('ballcam')) toggleBallCam();
-    if (pp('help')) $('help').classList.toggle('hidden');
+    if (TUT.on && padPressed(PB.RIGHT)) tutSkip();
     if (pp('mute')) toggleMute();
   }
   if (APP.state === 'match' && APP.sim) {
@@ -5204,6 +5330,7 @@ function frame(now) {
         sim.step(STEP, inputs);
         if (NET.inMatch) netCapture(sim);
         handleEvents(sim);
+        tutTick(STEP);
         APP.acc -= STEP;
       }
       if (NET.inMatch) netHostFrame(dt);
