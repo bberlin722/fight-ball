@@ -144,6 +144,7 @@ button:disabled{opacity:.5;cursor:not-allowed;transform:none}
 #tut p{margin:4px 0 8px}#tut kbd{background:#fff;border:2px solid var(--ink);border-radius:6px;padding:0 5px;font:900 12px Nunito}
 #tut .tbar{height:10px;border:2px solid var(--ink);border-radius:6px;background:#3a3550;overflow:hidden;margin-bottom:8px}#tut .tbar i{display:block;height:100%;background:#7be36b;transition:width .2s}
 #tut .tb{display:flex;align-items:center;gap:8px;flex-wrap:wrap}#tut .tb button{min-height:32px;padding:3px 12px;font-size:13px}#tut .tb small{margin-left:auto;color:var(--mute);font:800 12px Nunito}
+#wallWarn{position:absolute;inset:0;pointer-events:none;opacity:0;box-shadow:inset 0 0 90px 30px rgba(255,20,50,.85);border:4px solid rgba(255,40,60,.7)}
 #help kbd{background:#fff;border:2px solid var(--ink);border-radius:6px;padding:0 5px;font:900 11px Nunito}
 
 /* ---------- Overlays ---------- */
@@ -294,6 +295,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <div id="hint"></div>
   <div id="help" class="hidden"><div id="helpBody"></div></div>
   <div id="tut" class="hidden"></div>
+  <div id="wallWarn"></div>
 </div>
 
 <div id="pause" class="ov hidden"><div class="card">
@@ -2409,21 +2411,27 @@ DANGER_TEX.wrapS = THREE.RepeatWrapping;
    anyone flying fast toward a wall (knocked back) lights it up too. */
 function updateWallDanger(sim, t) {
   const focusId = sim && sim.players[APP.meId] ? APP.meId : (APP.specId >= 0 ? APP.specId : -1);
+  let near = 0;
   for (const w of WALL_DANGER) {
     let k = 0;
     if (sim) for (const p of sim.players) {
       if (!p.alive) continue;
       const c = FB.geo.closestOnSeg(w.s, p.x, p.z), dx = p.x - c[0], dz = p.z - c[1], d = Math.max(0, Math.hypot(dx, dz) - p.r);
-      if (p.id === focusId) k = Math.max(k, U.clamp(1 - d / 6, 0, 1));
+      if (p.id === focusId) { const kk = U.clamp(1 - d / 9, 0, 1); k = Math.max(k, kk); near = Math.max(near, U.clamp(1 - d / 3, 0, 1)); }
       const toward = -(p.vx * dx + p.vz * dz) / (Math.hypot(dx, dz) || 1);
       if (toward > 12 && d < 7) k = Math.max(k, U.clamp(1 - d / 7, 0, 1) * Math.min(1, toward / 20));
     }
-    w.k += (k - w.k) * 0.25;
-    if (w.k < 0.02) { w.m.visible = false; continue; }
-    const rate = 2 + 9 * w.k, blink = 0.5 + 0.5 * Math.sin(t * rate * Math.PI * 2);
-    w.m.visible = true; w.m.material.opacity = w.k * (0.3 + 0.7 * blink);
+    w.k += (k - w.k) * 0.35;
+    if (w.k < 0.02) { w.m.visible = w.bar.visible = w.top.visible = false; continue; }
+    const rate = 1.5 + 8.5 * w.k, blink = 0.5 + 0.5 * Math.sin(t * rate * Math.PI * 2), kk = Math.min(1, 0.35 + 0.9 * w.k);
+    w.m.visible = w.bar.visible = w.top.visible = true;
+    w.m.material.opacity = kk * (0.45 + 0.5 * blink);
+    w.bar.material.opacity = kk * (0.6 + 0.4 * blink);
     w.m.material.map.offset.x = -t * (0.2 + 0.8 * w.k);
   }
+  // screen edges flash red when you're right up against a wall
+  const el = document.getElementById('wallWarn');
+  if (el) { const blink = 0.5 + 0.5 * Math.sin(t * 9 * Math.PI * 2 / 1.5); el.style.opacity = near > 0.02 ? (near * (0.45 + 0.55 * blink)).toFixed(3) : '0'; }
 }
 function insideArenaPt(x, z) {   // same test the sim uses: ray-cast against the boundary
   let c = 0;
@@ -2480,10 +2488,15 @@ function buildArena() {
     const grp = new THREE.Group(); grp.position.set(mx, s.minY, mz); grp.rotation.y = -a; scene.add(grp);
     if (s.kind !== 'cross') {   // red danger strip on the arena side of every wall: fades in and blinks faster as players get close
       const nx = -Math.sin(a), nz = Math.cos(a), side = insideArenaPt(mx + nx * 1.2, mz + nz * 1.2) ? 1 : -1;
-      const dm = new THREE.Mesh(new THREE.PlaneGeometry(s.L, Math.min(3.2, h)), new THREE.MeshBasicMaterial({ map: DANGER_TEX, color: 0xff2a3d, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+      const dh = Math.min(5.5, h);
+      const dm = new THREE.Mesh(new THREE.PlaneGeometry(s.L, dh), new THREE.MeshBasicMaterial({ map: DANGER_TEX, color: 0xff1030, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
       dm.material.map = DANGER_TEX.clone(); dm.material.map.needsUpdate = true; dm.material.map.repeat.set(Math.max(1, s.L / 3), 1);
-      dm.position.set(0, Math.min(3.2, h) / 2 + 0.02, side * 0.32); dm.visible = false; dm.renderOrder = 3; grp.add(dm);
-      WALL_DANGER.push({ s, m: dm, k: 0 });
+      dm.position.set(0, dh / 2 + 0.02, side * 0.32); dm.visible = false; dm.renderOrder = 3; grp.add(dm);
+      // bright glowing base bar + top rail line so it reads from across the pitch
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(s.L, 0.35), new THREE.MeshBasicMaterial({ color: 0xff4050, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+      bar.position.set(0, 0.2, side * 0.36); bar.visible = false; bar.renderOrder = 4; grp.add(bar);
+      const top = bar.clone(); top.material = bar.material; top.position.y = dh - 0.1; grp.add(top);
+      WALL_DANGER.push({ s, m: dm, bar, top, k: 0 });
     }
     if (s.kind === 'goal') {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(s.L, h), net.clone()); m.material.map = net.map.clone(); m.material.map.needsUpdate = true;
@@ -4203,7 +4216,8 @@ function startMatch(roster, opts) {
   if (me && !PAD.using) tryLock();
 }
 function clearMatch() {
-  for (const w of WALL_DANGER) { w.k = 0; w.m.visible = false; }
+  for (const w of WALL_DANGER) { w.k = 0; w.m.visible = w.bar.visible = w.top.visible = false; }
+  { const el = document.getElementById('wallWarn'); if (el) el.style.opacity = '0'; }
   aimArrow.g.visible = false; kickArc.g.visible = false;
   APP.models.forEach(m => scene.remove(m.g)); APP.models = [];
   for (const [, m] of projMeshes) scene.remove(m); projMeshes.clear();
