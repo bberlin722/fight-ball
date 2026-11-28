@@ -2398,7 +2398,7 @@ scene.add(sun);
    Arena
    =================================================================== */
 const MAP = FB.MAPS.grandPitch();
-const WALL_DANGER = [];
+const WALL_DANGER = []; window.FIGHTBALL_WD = WALL_DANGER;
 const DANGER_TEX = canvasTex(256, 128, (g, w, h) => {
   const gr = g.createLinearGradient(0, h, 0, 0); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = gr; g.fillRect(0, 0, w, h);
