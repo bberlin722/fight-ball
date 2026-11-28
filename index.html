@@ -358,7 +358,7 @@ const BALL_NEUTRAL_SPEED = 8, BALL_HURT_SPEED = 10;
 const TOWER_HP = 250, TOWER_R = 1.5, TOWER_H = 6.2, TOWER_RANGE = 13, TOWER_CD = 10, TOWER_SHOT_SPEED = 42;
 const BONUS_KINDS = ['atk', 'speed', 'stamina', 'def', 'shield'];
 FB.BONUS_NAMES = { atk: 'Attack +25%', speed: 'Speed +12%', stamina: 'Stamina +40%', def: 'Defense +25%', shield: 'Shield +50%' };
-const GOAL_PACK_T = 120, RESPAWN_T = 30, ASSIST_WINDOW = 15, BOX_DEPTH = 13, BOX_HALF_W = 13;   // saves only inside the penalty box drawn in front of each goal
+const GOAL_PACK_T = 120, RESPAWN_T = 15, ASSIST_WINDOW = 15, BOX_DEPTH = 13, BOX_HALF_W = 13;   // saves only inside the penalty box drawn in front of each goal
 const PAD_SMALL = 0.3, PAD_SMALL_T = 10, PAD_BIG_T = 30;
 const ITEM_TYPES = { hp: { name: 'Health pack' }, atk: { name: 'Attack boost' }, def: { name: 'Defense boost' } };
 FB.ITEM_TYPES = ITEM_TYPES;
@@ -2056,9 +2056,10 @@ FB.Sim = Sim;
    Bots
    =================================================================== */
 const DIFF = {
-  easy:   { think: 0.32, aimErr: 0.22, aggro: 0.3, shield: 0.05, skill: 0.25, speedMul: 0.85 },
-  normal: { think: 0.18, aimErr: 0.1, aggro: 0.5, shield: 0.16, skill: 0.5, speedMul: 1 },
-  hard:   { think: 0.08, aimErr: 0.04, aggro: 0.7, shield: 0.3, skill: 0.85, speedMul: 1 }
+  // v3.5: every level is tougher (faster reactions, better aim, more shields/parries, more skills, charged hits, dash-punches from range)
+  easy:   { think: 0.22, aimErr: 0.14, aggro: 0.42, shield: 0.12, skill: 0.4, speedMul: 0.95, chargeHold: 0.2, lunge: 0.05 },
+  normal: { think: 0.11, aimErr: 0.06, aggro: 0.62, shield: 0.32, skill: 0.7, speedMul: 1, chargeHold: 0.4, lunge: 0.15 },
+  hard:   { think: 0.05, aimErr: 0.02, aggro: 0.62, shield: 0.4, skill: 1.0, speedMul: 1.05, chargeHold: 0.3, lunge: 0.15 }
 };
 FB.DIFF = DIFF;
 
@@ -2094,6 +2095,10 @@ class BotBrain {
   }
   think(p) {
     const sim = this.sim, b = sim.ball, d = this.d, inp = this.in;
+    if (this.press && this.press.lunge != null && sim.time < this.press.until) {   // charging a dash punch: keep tracking the target, stand still
+      const q = sim.players[this.press.lunge];
+      if (q && q.alive) { inp.aimYaw = Math.atan2(q.z - p.z, q.x - p.x); inp.mx = inp.mz = 0; return; }
+    }
     const dir = sim.attackDir(p.team), ownX = -dir * HL, oppX = dir * HL;
     const enemies = sim.players.filter(q => q.alive && q.team !== p.team);
     const mates = sim.players.filter(q => q.alive && q.team === p.team && q !== p);
@@ -2177,7 +2182,14 @@ class BotBrain {
       aim = Math.atan2(b.z - p.z, b.x - p.x);
       sprint = Math.hypot(tx - p.x, tz - p.z) > 12;
       if (near && nearD < 9 && p.heroId === 'volt' && p.cd1 <= 0 && Math.random() < d.skill) { aim = Math.atan2(near.z - p.z, near.x - p.x); inp.s1 = true; }
-    } else if (mode === 'fight') {
+    } else if (mode === 'fight' || (near && nearD > 3 && nearD < 7.5 && Math.abs(near.y - p.y) < 1.5 && !p.atk && !this.press && sim.time > this.nextAtk && Math.random() < (d.lunge || 0) * 0.5 && (this.lungeNow = true))) {
+      if (this.lungeNow) {
+        this.lungeNow = false;
+        aim = Math.atan2(near.z - p.z, near.x - p.x) + (Math.random() - 0.5) * d.aimErr;
+        const P = clamp((nearD + 0.6) / 7.95, 0.25, 1), hold = (P - 0.25) / 0.75 * 0.72;
+        this.press = { key: 'punch', until: sim.time + 0.02 + hold, lunge: near.id }; this.nextAtk = sim.time + 0.6 + hold;
+        tx = p.x; tz = p.z;
+      } else {
       tx = near.x; tz = near.z; aim = Math.atan2(near.z - p.z, near.x - p.x) + (Math.random() - 0.5) * d.aimErr;
       if (nearD < 2.4 + p.hero.reach && sim.time > this.nextAtk && !p.atk && !this.press) {
         const r = Math.random();
@@ -2186,10 +2198,11 @@ class BotBrain {
         else if (p.heroId === 'bumper' && p.cd1 <= 0 && r < d.skill * 0.6) inp.s1 = true;
         else if (p.heroId === 'bubble' && p.cd2 <= 0 && r < d.skill * 0.5) inp.s2 = true;
         else if (p.heroId === 'spike' && p.cd2 <= 0 && r < d.skill * 0.6) inp.s2 = true;
-        else this.press = { key: Math.random() < 0.6 ? 'punch' : 'kick', until: sim.time + 0.05 + Math.random() * 0.15 };
+        else this.press = { key: Math.random() < 0.6 ? 'punch' : 'kick', until: sim.time + 0.05 + Math.random() * (d.chargeHold || 0.15) };
         this.nextAtk = sim.time + 0.25 + (1 - d.aggro) * 0.4;
       } else if (nearD < 9 && p.heroId === 'volt' && p.cd1 <= 0 && Math.random() < d.skill) inp.s1 = true;
       if (near.y > p.y + 1 && p.grounded && Math.random() < 0.4) inp.jump = true;
+      }
     } else { // ball
       const gz = clamp(this.goalZ, -GW + 1.5, GW - 1.5);
       if (Math.random() < 0.15) this.goalZ = (Math.random() * 2 - 1) * (GW - 1.5);
