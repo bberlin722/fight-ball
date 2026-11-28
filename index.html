@@ -2491,14 +2491,14 @@ function buildArena() {
     if (s.kind !== 'cross') {   // red danger strip on the arena side of every wall: fades in and blinks faster as players get close
       const nx = -Math.sin(a), nz = Math.cos(a), side = insideArenaPt(mx + nx * 1.2, mz + nz * 1.2) ? 1 : -1;
       const dh = Math.min(5.5, h);
-      const dm = new THREE.Mesh(new THREE.PlaneGeometry(s.L, dh), new THREE.MeshBasicMaterial({ map: DANGER_TEX, color: 0xff0a1e, transparent: true, opacity: 0, depthWrite: false, depthTest: false, side: THREE.DoubleSide }));
+      const dm = new THREE.Mesh(new THREE.PlaneGeometry(s.L, dh), new THREE.MeshBasicMaterial({ map: DANGER_TEX, color: 0xff0a1e, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
       dm.material.map = DANGER_TEX.clone(); dm.material.map.needsUpdate = true; dm.material.map.repeat.set(Math.max(1, s.L / 3), 1);
       dm.position.set(0, dh / 2 + 0.02, side * 0.32); dm.visible = false; dm.renderOrder = 3; grp.add(dm);
       // bright glowing base bar + top rail line so it reads from across the pitch
       // a solid red band over the advertising boards (they're pink, so they go fully red) and a bright top line
-      const bar = new THREE.Mesh(new THREE.PlaneGeometry(s.L, 1.3), new THREE.MeshBasicMaterial({ color: 0xff1a2a, transparent: true, opacity: 0, depthWrite: false, depthTest: false, side: THREE.DoubleSide }));
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(s.L, 1.3), new THREE.MeshBasicMaterial({ color: 0xff1a2a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
       bar.position.set(0, 0.62, side * 0.4); bar.visible = false; bar.renderOrder = 4; grp.add(bar);
-      const top = new THREE.Mesh(new THREE.PlaneGeometry(s.L, 0.22), new THREE.MeshBasicMaterial({ color: 0xffe0e0, transparent: true, opacity: 0, depthWrite: false, depthTest: false, side: THREE.DoubleSide }));
+      const top = new THREE.Mesh(new THREE.PlaneGeometry(s.L, 0.22), new THREE.MeshBasicMaterial({ color: 0xffe0e0, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
       top.position.set(0, dh - 0.1, side * 0.4); top.visible = false; top.renderOrder = 4; grp.add(top);
       WALL_DANGER.push({ s, m: dm, bar, top, k: 0 });
     }
