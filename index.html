@@ -2398,7 +2398,7 @@ scene.add(sun);
    Arena
    =================================================================== */
 const MAP = FB.MAPS.grandPitch();
-const WALL_DANGER = []; window.FIGHTBALL_WD = WALL_DANGER;   // debug handle
+const WALL_DANGER = [];
 const DANGER_TEX = canvasTex(256, 128, (g, w, h) => {
   // nearly solid (tinted red by the material), fading a little toward the top, with darker hazard stripes and a bright base line
   const gr = g.createLinearGradient(0, h, 0, 0); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.6, 'rgba(255,255,255,.85)'); gr.addColorStop(1, 'rgba(255,255,255,.45)');
@@ -2426,9 +2426,12 @@ function updateWallDanger(sim, t) {
     if (w.k < 0.02) { w.m.visible = w.bar.visible = w.top.visible = false; continue; }
     const rate = 1.5 + 8.5 * w.k, blink = 0.5 + 0.5 * Math.sin(t * rate * Math.PI * 2), kk = Math.min(1, 0.35 + 0.9 * w.k);
     w.m.visible = w.bar.visible = w.top.visible = true;
-    w.m.material.opacity = Math.min(0.92, kk * (0.5 + 0.5 * blink));
-    w.bar.material.opacity = Math.min(0.95, kk * (0.55 + 0.45 * blink));
-    w.top.material.opacity = kk * blink;
+    // fade the strip if the camera itself is right up against this wall, so it doesn't fill the screen
+    const cc = FB.geo.closestOnSeg(w.s, camera.position.x, camera.position.z), camD = Math.hypot(camera.position.x - cc[0], camera.position.z - cc[1]);
+    const camF = U.clamp((camD - 0.6) / 3, 0.12, 1);
+    w.m.material.opacity = Math.min(0.92, kk * (0.5 + 0.5 * blink)) * camF;
+    w.bar.material.opacity = Math.min(0.95, kk * (0.55 + 0.45 * blink)) * camF;
+    w.top.material.opacity = kk * blink * camF;
     w.m.material.map.offset.x = -t * (0.2 + 0.8 * w.k);
   }
   // screen edges flash red when you're right up against a wall
