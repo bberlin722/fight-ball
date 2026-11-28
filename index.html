@@ -490,9 +490,9 @@ FB.HEROES = {
     blurb: 'Hold jump to hover and glide on her jet pack. Fast, explosive, hard to pin down.' },
   spike: { name: 'Spike', role: 'All-rounder', color: '#9aa3b5', accent: '#3d4252', size: 1.05,
     hp: 195, speed: 8.0, sprint: 1.5, stam: 1.1, weight: 1.2, punch: 11, kick: 13, ballPow: 1.0, reach: 0.15, shieldHp: 65, jump: 10,
-    s1: { id: 'grapple', name: 'Grapple Chain', cd: 8, desc: 'Fling a chain hook a quarter of the pitch. It yanks an enemy or the ball into your spikes, which hurt and knock them back.' },
-    s2: { id: 'spikes', name: 'Spike Volley', cd: 7, desc: 'Throw three spikes in a row. Light hits, but landing all three makes the third one hit much harder.' },
-    blurb: 'Covered in spikes: pulls enemies and the ball in, then sends them flying.' }
+    s1: { id: 'spikes', name: 'Spike Volley', cd: 7, desc: 'Throw three spikes in a row. Light hits, but landing all three makes the third one hit much harder.' },
+    s2: { id: 'grapple', name: 'Grapple Chain', cd: 10, desc: 'Fling a chain hook a quarter of the pitch. It reels an enemy or the ball in and keeps them chained close to you, slowed, for a moment.' },
+    blurb: 'Covered in spikes: chains enemies and the ball up close, then picks them apart.' }
 };
 FB.HERO_ORDER = ['bulwark', 'blaze', 'volt', 'atlas', 'zip', 'nova', 'bumper', 'bubble', 'rocket', 'spike'];
 FB.ROLES = ['FWD', 'DEF', 'GK'];
@@ -1354,21 +1354,37 @@ class Sim {
         if (!p || !p.alive) { this.effects.splice(i, 1); continue; }
         if (e.kind === 'p') {
           const q = this.players[e.id];
-          if (!q || !q.alive || e.t <= 0) { this.effects.splice(i, 1); continue; }
+          if (!q || !q.alive || (e.t <= 0 && !e.hold)) { this.effects.splice(i, 1); continue; }
           const dx = p.x - q.x, dz = p.z - q.z, d = Math.hypot(dx, dz) || 1;
-          if (d < p.r + q.r + 0.7) {
-            this.hitPlayer(p, q, 16, 18, -dx / d, -dz / d, 0.45, 'skill');
-            this.emit({ type: 'spikeHit', id: p.id, x: q.x, y: q.y + 1, z: q.z }); this.effects.splice(i, 1); continue;
+          if (e.hold) {   // chained: kept close and slowed (no knockback); the chain breaks when the timer runs out
+            q.slowT = Math.max(q.slowT, 0.25);
+            if (d > p.r + q.r + 1.6) { const k = Math.min(1, (d - p.r - q.r - 1.6) * 0.5); q.vx += dx / d * 30 * k * dt * 8; q.vz += dz / d * 30 * k * dt * 8; }
+            if (e.t <= 0) { q.slowT = Math.max(q.slowT, 0.8); this.effects.splice(i, 1); }
+            continue;
+          }
+          if (d < p.r + q.r + 0.9) {
+            e.hold = true; e.t = 1.4;   // arrived: spikes prick (light damage, no knockback), then held
+            q.vx *= 0.1; q.vz *= 0.1;
+            q.hp -= 8; q.lastDmgT = this.time; q.lastHitBy = p.id; q.lastHitT = this.time; q.anim.hitFlash = 0.15; p.stats.dmg += 8;
+            this.emit({ type: 'spikeHit', id: p.id, x: q.x, y: q.y + 1, z: q.z });
+            this.emit({ type: 'hit', id: q.id, by: p.id, x: q.x, y: q.y + q.height * 0.6, z: q.z, dmg: 8, kind: 'skill', power: 2 });
+            if (q.hp <= 0) { this.knockOut(q, p); this.effects.splice(i, 1); }
+            continue;
           }
           q.vx = dx / d * 26; q.vz = dz / d * 26; q.stunT = Math.max(q.stunT, 0.12); q.atk = null; q.charge = null;
         } else {
           const ty = p.y + 1.3, dx = p.x - b.x, dy = ty - b.y, dz = p.z - b.z, d = Math.hypot(dx, dy, dz) || 1;
           if (e.t <= 0) { this.effects.splice(i, 1); continue; }
-          if (Math.hypot(dx, dz) < p.r + BALL_R + 0.6) {
-            const a = p.aimYaw != null ? p.aimYaw : p.yaw;
-            this.hitBall(p, Math.cos(a), Math.sin(a), 0.25, 24 * p.hero.ballPow, 0);
-            this.emit({ type: 'spikeHit', id: p.id, x: b.x, y: b.y, z: b.z, ball: 1 }); this.emit({ type: 'ballHit', id: p.id, x: b.x, y: b.y, z: b.z, pow: 24 });
-            this.effects.splice(i, 1); continue;
+          if (e.hold) {   // the ball stays chained just in front of him, slowed, until he hits it or the chain lets go
+            if (b.lastTouchT > e.mark + 1e-6 || e.t <= 0) { this.effects.splice(i, 1); continue; }
+            const a = p.yaw, hx = p.x + Math.cos(a) * (p.r + BALL_R + 0.5), hz = p.z + Math.sin(a) * (p.r + BALL_R + 0.5);
+            b.vx = b.vx * 0.8 + (hx - b.x) * 6 * 0.2; b.vz = b.vz * 0.8 + (hz - b.z) * 6 * 0.2;
+            continue;
+          }
+          if (Math.hypot(dx, dz) < p.r + BALL_R + 0.9) {
+            e.hold = true; e.t = 1.4; b.vx *= 0.15; b.vy = Math.min(b.vy, 2); b.vz *= 0.15; b.team = p.team; b.lastTouch = p.id; b.lastTouchT = this.time; e.mark = b.lastTouchT;
+            this.emit({ type: 'spikeHit', id: p.id, x: b.x, y: b.y, z: b.z, ball: 1 });
+            continue;
           }
           b.vx = dx / d * 28; b.vy = dy / d * 28; b.vz = dz / d * 28; b.team = p.team; b.lastTouch = p.id; b.lastTouchT = this.time;
         }
@@ -2197,7 +2213,7 @@ class BotBrain {
         else if (r < d.skill * 0.5 && p.cd2 <= 0 && ['slam', 'uppercut', 'cyclone'].includes(p.hero.s2.id)) inp.s2 = true;
         else if (p.heroId === 'bumper' && p.cd1 <= 0 && r < d.skill * 0.6) inp.s1 = true;
         else if (p.heroId === 'bubble' && p.cd2 <= 0 && r < d.skill * 0.5) inp.s2 = true;
-        else if (p.heroId === 'spike' && p.cd2 <= 0 && r < d.skill * 0.6) inp.s2 = true;
+        else if (p.heroId === 'spike' && p.cd1 <= 0 && r < d.skill * 0.6) inp.s1 = true;
         else this.press = { key: Math.random() < 0.6 ? 'punch' : 'kick', until: sim.time + 0.05 + Math.random() * (d.chargeHold || 0.15) };
         this.nextAtk = sim.time + 0.25 + (1 - d.aggro) * 0.4;
       } else if (nearD < 9 && p.heroId === 'volt' && p.cd1 <= 0 && Math.random() < d.skill) inp.s1 = true;
@@ -2242,10 +2258,11 @@ class BotBrain {
         if (p.heroId === 'blaze' && p.cd2 <= 0 && ballD < 5 && b.y < 2) inp.s2 = true;
       }
       if (p.heroId === 'zip' && p.cd1 <= 0 && ballD > 12 && Math.random() < d.skill * 0.4) { aim = Math.atan2(tz - p.z, tx - p.x); inp.s1 = true; }
-      if (p.heroId === 'spike' && p.cd1 <= 0 && ballD > 7 && ballD < 21 && Math.random() < d.skill * 0.3) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
+      if (p.heroId === 'spike' && p.cd2 <= 0 && ballD > 7 && ballD < 21 && Math.random() < d.skill * 0.3) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s2 = true; }
       if (p.heroId === 'bubble' && p.cd1 <= 0 && threat && ballFromOwn < 32 && ballD < 16 && Math.random() < d.skill * 0.3) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s1 = true; }
       if (p.heroId === 'bumper' && p.cd2 <= 0 && threat && ballFromOwn < 32 && ballD < 14 && Math.random() < d.skill * 0.3) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s2 = true; }
-      if (p.heroId === 'spike' && p.cd2 <= 0 && near && nearD < 14 && Math.random() < d.skill * 0.08) { aim = Math.atan2(near.z - p.z, near.x - p.x); inp.s2 = true; }
+      if (p.heroId === 'spike' && p.cd1 <= 0 && near && nearD < 14 && Math.random() < d.skill * 0.12) { aim = Math.atan2(near.z - p.z, near.x - p.x); inp.s1 = true; }
+      if (p.heroId === 'spike' && p.cd2 <= 0 && near && nearD > 6 && nearD < 20 && Math.random() < d.skill * 0.05) { aim = Math.atan2(near.z - p.z, near.x - p.x); inp.s2 = true; }
       if (p.heroId === 'rocket' && p.cd2 <= 0 && ballD > 9 && ballD < 30 && Math.random() < d.skill * 0.15) { aim = Math.atan2(b.z - p.z, b.x - p.x); inp.s2 = true; }
       if (b.y > 3 && ballD < 4 && p.grounded && Math.random() < 0.3) inp.jump = true;
     }
